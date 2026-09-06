@@ -749,10 +749,12 @@ body[data-theme='light'] .sec-t {
 }
 .pnl-btns {
   display: flex;
+  flex-wrap: wrap; /* 窄屏自动换行：按钮总宽超出手机显示范围时折行而非左侧截断 */
   gap: 8px;
   justify-content: flex-end;
   margin-top: 18px;
 }
+.pnl-btns .btn { flex-shrink: 0; }
 .exp-choices {
   display: grid;
   grid-template-columns: 1fr 1fr;

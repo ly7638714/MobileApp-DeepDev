@@ -1,9 +1,10 @@
 <script setup>
 // R3-③b：成绩单 / 报告区子组件（从 ExamPanel.vue 的 result 阶段模板逐字搬入）
 // 父组件通过 ctx 注入全部依赖；模板保持与 ExamPanel 完全一致，仅把状态/方法从 ctx 暴露到本组件作用域。
-import { toRefs } from 'vue'
+import { toRefs, ref } from 'vue'
 import { addFlaggedQuestion } from '../utils/flaggedQuestions' // 37号 正确性加固B：疑题反馈
 import { showToast } from '../utils/toast'
+import { downloadLiveScreenshot } from '../utils/capture' // 成绩单整卷截图分享
 
 const props = defineProps({ ctx: { type: Object, required: true } })
 
@@ -18,6 +19,15 @@ const {
   achieveText, renderMd, doExportPaper, backToConfig, nextSingle, replay,
   saveWrongs, backList, fmt, openDesigner
 } = props.ctx
+
+const shotBox = ref(null)
+async function shotReport() {
+  const el = shotBox.value
+  if (!el) return showToast('尚未生成成绩单', 'info')
+  const nm = (curPaper && curPaper.value && curPaper.value.name) || '成绩单'
+  try { await downloadLiveScreenshot(el, { title: '📄 ' + nm + ' · 成绩单', name: '成绩单_' + new Date().toISOString().slice(0, 10) }) }
+  catch (e) { showToast('截图失败：' + (e && e.message || e), 'error') }
+}
 
 // 37号 正确性加固B：成绩单里对某道错题一键上报「疑题」→ 进入 xc_flag_qs，后续组卷自动降低同类考点权重
 function flagQ(qq) {
@@ -47,6 +57,7 @@ function flagQ(qq) {
       </div>
     </div>
     <template v-else>
+    <div ref="shotBox" class="sr-shot"> <!-- 截图区域：不含导出/操作按钮 -->
       <h3>📄 成绩单 · {{ curPaper ? curPaper.name : '模拟卷' }}</h3>
       <div class="sr-score">{{ score }} / {{ questions.length }}</div>
       <div class="sr-rate">{{ rate }}% · {{ achieveText() }}</div>
@@ -73,10 +84,12 @@ function flagQ(qq) {
           <div style="margin-top: 4px"><button class="btn btn-gh" style="padding: 1px 8px; font-size: 11px" :disabled="qq.designerLoading" @click.stop="openDesigner(qq)">{{ qq.designerLoading ? '🧠 正在生成命题人设计说明…' : (qq.designer ? '🧠 查看命题人设计说明' : '🧠 生成命题人设计说明（出题意图·考察能力·陷阱）') }}</button><span v-if="qq.designer" style="font-size:10px;color:var(--text3);margin-left:6px">由命题视角生成，非解析复述</span></div>
         </div>
       </div>
+    </div>
       <!-- 导出收纳：默认折叠，需要时展开，减少成绩单臃肿感 -->
       <details class="ep-export-details">
         <summary>📤 导出整卷（Word / PDF / Markdown / LaTeX / Typst）{{ aiLayout ? ' · ✨ AI排版开' : '' }}</summary>
         <div class="ep-export-row">
+          <button class="btn btn-gh ep-export-b" title="把整张成绩单截成高清图片（可存相册/分享到其它APP）" @click="shotReport()">📷 整卷截图分享</button>
           <span class="ep-export-l">选项：</span>
           <button class="btn btn-gh ep-export-b" :class="{ on: aiLayout }" :title="aiLayout ? 'AI 排版已开启：先梳理考点/错因/秒杀规律再导出' : 'AI 排版关闭：原样导出'" @click="aiLayout = !aiLayout">✨ {{ aiLayout ? 'AI排版开' : 'AI排版关' }}</button>
           <button class="btn btn-gh ep-export-b" :class="{ on: separateAns }" :title="separateAns ? '题答分离已开启：题目在前，答案解析集中到卷尾（适合打印重做）' : '题答分离关闭：答案解析跟在每题后'" @click="separateAns = !separateAns; if (separateAns && aiLayout) aiLayout = false">🧩 {{ separateAns ? '题答分离开' : '题答分离关' }}</button>

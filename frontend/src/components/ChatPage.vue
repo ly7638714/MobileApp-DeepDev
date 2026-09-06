@@ -6,6 +6,7 @@ import { USAGE_GUIDE } from '../utils/usageGuide'
 import { parseQuiz, extractChoices, looksLikeQuiz, isQuizAsk } from '../utils/quiz'
 import { downloadMdScreenshot, snapshotMd } from '../utils/capture' // v3.8.215 截图分享(整幅渲染)
 import { saveImage } from '../utils/downloadOut' // v3.8.214 统一保存出口
+import { setClipboard } from '../utils/platform' // ★剪贴板走宿主桥（5+下用系统剪贴板）
 function md(t) {
   return renderMd(t)
 }
@@ -1964,7 +1965,8 @@ function selMsg() {
 async function copySelected() {
   const t = window.getSelection() ? window.getSelection().toString() : ''
   if (!t) return
-  try { await navigator.clipboard.writeText(t); showToast('✅ 已复制选中内容', 'success') } catch (e) { showToast('复制失败：' + e.message, 'error') }
+  const ok = await setClipboard(t)
+  showToast(ok ? '✅ 已复制选中内容' : '复制失败', ok ? 'success' : 'error')
   hideSelBar()
 }
 function selectAllMsg() {
@@ -1982,7 +1984,8 @@ function selectAllMsg() {
 async function copyFullMsg() {
   const m = selMsg()
   if (!m) return
-  try { await navigator.clipboard.writeText(textOf(m)); showToast('✅ 已复制整条消息', 'success') } catch (e) { showToast('复制失败：' + e.message, 'error') }
+  const ok = await setClipboard(textOf(m))
+  showToast(ok ? '✅ 已复制整条消息' : '复制失败', ok ? 'success' : 'error')
   hideSelBar()
 }
 
@@ -2042,16 +2045,7 @@ onUnmounted(() => evOff('xc-goto-msg', onGotoMsg))
 
 // ===== 代码块复制（事件委托）=====
 async function copyRaw(text) {
-  try {
-    await navigator.clipboard.writeText(text)
-  } catch (e) {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    ta.remove()
-  }
+  await setClipboard(text)
 }
 function flashBtn(btn, doneText = '✅ 已复制') {
   const old = btn.textContent

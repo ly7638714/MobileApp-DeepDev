@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { store, saveMyMem, saveWqs, saveNotes, addWrong } from '../store'
 import { chatOnce, activeCfg } from '../api'
 import { showToast } from '../utils/toast'
+import { setClipboard } from '../utils/platform' // ★剪贴板走宿主桥
 import { on as evOn, off as evOff } from '../utils/events'
 import { srsReviewedToday, srsMasteredCount } from '../utils/srsStats'
 import { useAi } from '../utils/useAi'
@@ -337,23 +338,9 @@ function closeNote() {
 function copyNote(n) {
   if (!n) return
   const md = '---\ntags: [' + (n.tags || []).join(', ') + ']\nsource: 行测名师AI小助理\n---\n\n# ' + n.title + '\n\n' + String(n.body || '').trim()
-  const done = () => showToast('已复制为 Obsidian 格式', 'success')
-  const fail = () => showToast('复制失败', 'error')
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(md).then(done).catch(fail)
-  } else {
-    const ta = document.createElement('textarea')
-    ta.value = md
-    document.body.appendChild(ta)
-    ta.select()
-    try {
-      document.execCommand('copy')
-      done()
-    } catch (e) {
-      fail()
-    }
-    ta.remove()
-  }
+  setClipboard(md).then((ok) => {
+    showToast(ok ? '已复制为 Obsidian 格式' : '复制失败', ok ? 'success' : 'error')
+  }).catch(() => showToast('复制失败', 'error'))
 }
 function delNote(i) {
   if (!confirm('删除这条导入笔记？')) return

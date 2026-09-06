@@ -2793,10 +2793,10 @@ onUnmounted(() => {
         <div id="set-data" class="sec-t">💾 数据保存位置（本地文件夹）</div>
         <div class="sec-desc">数据保存位置与迁移：本地文件夹 / 导出导入备份 / WebDAV 云同步 / 时政范围。</div>
         <div class="fld">
-          <label>{{ isNative ? '⚠️ 此「选择文件夹」为桌面浏览器专属功能，手机系统不允许网页直接选文件夹写盘（点按钮无反应属正常）。手机请使用下方「📱 原生备份 / 📤 分享备份」或 WebDAV，可存到微信/网盘/任意位置。' : '电脑端（桌面 Chrome/Edge）：选择文件夹后，可一键/自动把全部数据保存进去；其它浏览器不支持。' }}</label>
+          <label>{{ isNativeHost() ? '📂 原生宿主(方案乙)：点击会调起系统「选择文件夹」(SAF)，选好后点「保存全部数据」即可写入该文件夹并开启自动备份。' : (isNative ? '⚠️ 5+App 环境：系统不允许网页直接选文件夹写盘（此按钮在 5+ 下不可用）。请使用下方「📱 原生备份 / 📤 分享备份」或 WebDAV。' : '电脑端（桌面 Chrome/Edge）：选择文件夹后，可一键/自动把全部数据保存进去；其它浏览器不支持。') }}</label>
           <div class="exp-choices">
-            <button class="btn btn-gh" :disabled="isNative" :title="isNative ? '手机端不支持（见说明）' : ''" @click="pickDir()">📁 选择保存文件夹</button>
-            <button class="btn btn-pri" :disabled="isNative" @click="saveDataDir()">💾 保存全部数据（桌面）</button>
+            <button class="btn btn-gh" :disabled="isNative && !isNativeHost()" :title="isNative && !isNativeHost() ? '5+ 环境不支持（见说明）' : ''" @click="pickDir()">📁 选择保存文件夹</button>
+            <button class="btn btn-pri" :disabled="isNative && !isNativeHost()" @click="saveDataDir()">💾 保存全部数据{{ isNativeHost() ? '' : '（桌面）' }}</button>
           <template v-if="isNative">
             <div style="font-size: 11px; color: var(--hud-cyan); margin-top: 6px">📱 检测到原生安卓(HBuilderX)：原生备份写入 <b>{{ nativePath || '应用备份目录' }}</b>（注：该目录在部分系统/ROM 的文件管理里不可见；需要“找得到文件”请用「📤 分享/导出备份」另存到微信/网盘/文件管理器）</div>
             <div class="exp-choices">

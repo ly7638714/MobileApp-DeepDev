@@ -192,6 +192,65 @@ export async function getClipboard() {
   return null
 }
 
+// ============ 原生宿主(方案乙)：SAF 选文件夹/写入 + 本地通知 ============
+let _pickSeq = 0
+const _pickWait = {}
+let _writeSeq = 0
+const _writeWait = {}
+function ensureNativeHandlers() {
+  if (!isNativeHost() || window.__xcPickReady) return
+  try {
+    window.__xcPickReady = true
+    window.__xcOnPick = (id, uri, name, err) => {
+      const r = _pickWait[id]
+      delete _pickWait[id]
+      if (r) r(err ? { ok: false, error: String(err || '已取消') } : { ok: true, treeUri: String(uri || ''), name: String(name || '') })
+    }
+    window.__xcOnWrite = (id, res) => {
+      const r = _writeWait[id]
+      delete _writeWait[id]
+      if (!r) return
+      const s = String(res || '')
+      if (s.indexOf('ok:') === 0) r({ ok: true, name: s.slice(3) })
+      else r({ ok: false, error: s.indexOf('err:') === 0 ? s.slice(4) : s })
+    }
+  } catch (e) {}
+}
+/** 调起系统文件夹选择器(SAF)；返回 {ok,treeUri,name} 或 {ok:false,error}；非原生返回 null */
+export function nativePickFolder() {
+  return new Promise((res) => {
+    if (!isNativeHost()) return res(null)
+    ensureNativeHandlers()
+    const id = ++_pickSeq
+    _pickWait[id] = res
+    try { window.xcnative.pickFolder(id) } catch (e) { delete _pickWait[id]; res(null) }
+  })
+}
+function toBase64Utf8(str) {
+  try {
+    const u = new TextEncoder().encode(String(str))
+    let bin = ''
+    const CH = 0x8000
+    for (let i = 0; i < u.length; i += CH) bin += String.fromCharCode.apply(null, u.subarray(i, i + CH))
+    return btoa(bin)
+  } catch (e) { return '' }
+}
+/** 向已授权 SAF 文件夹写入文本文件 */
+export function nativeWriteFolderText(treeUri, name, text) {
+  return new Promise((res) => {
+    if (!isNativeHost() || !treeUri) return res({ ok: false, error: '非原生宿主或无目录' })
+    ensureNativeHandlers()
+    const id = ++_writeSeq
+    _writeWait[id] = res
+    try { window.xcnative.writeIntoFolder(String(treeUri), String(name), toBase64Utf8(text), id) } catch (e) { delete _writeWait[id]; res({ ok: false, error: e.message }) }
+  })
+}
+/** 本地通知（原生宿主；Android 13+ 首次会申请 POST_NOTIFICATIONS） */
+export function notify(title, text) {
+  try { if (isNativeHost() && window.xcnative.notify) { window.xcnative.notify(String(title || ''), String(text || '')); return true } } catch (e) {}
+  return false
+}
+
 // ============ 系统分享（Android Intent.ACTION_SEND） ============
 /** 文本分享：拉起系统分享面板（plus 宿主走 Intent，浏览器走 navigator.share 降级） */
 export function shareText(text, title) {
@@ -318,5 +377,6 @@ export default {
   downloadsAbsRoot, toAbsolute, writeTextFile, writeBlobFile,
   setClipboard, getClipboard, shareText,
   onHardwareBack, emitHardwareBack, exitApp, installPlusBackBehavior, installNativeBackBehavior, uninstallPlusBackBehavior,
-  vibrate, nativeToast, openExternal, statusbarHeight, runtimeVersion, exposePlatform
+  vibrate, nativeToast, openExternal, statusbarHeight, runtimeVersion, exposePlatform,
+  nativePickFolder, nativeWriteFolderText, notify
 }

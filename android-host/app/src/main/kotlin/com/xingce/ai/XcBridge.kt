@@ -1,9 +1,15 @@
 package com.xingce.ai
 
 import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -19,6 +25,43 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
     }
     @JavascriptInterface fun toast(msg: String) {
         try { android.widget.Toast.makeText(activity, msg, android.widget.Toast.LENGTH_SHORT).show() } catch (e: Exception) {}
+    }
+
+    // ---- 本地通知（学习提醒用）；Android 13+ 首次申请 POST_NOTIFICATIONS ----
+    @JavascriptInterface fun notify(title: String, text: String): Boolean {
+        return try {
+            ensureNotifyPermission()
+            if (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                return false
+            }
+            val mgr = activity.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= 26) {
+                val ch = NotificationChannel("xc_default", "行测提醒", NotificationManager.IMPORTANCE_DEFAULT)
+                mgr.createNotificationChannel(ch)
+            }
+            val id = System.currentTimeMillis().toInt()
+            val pi = PendingIntent.getActivity(activity, id, Intent(activity, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            val n = if (Build.VERSION.SDK_INT >= 26) {
+                android.app.Notification.Builder(activity, "xc_default")
+                    .setContentTitle(title)
+                    .setContentText(text)
+                    .setSmallIcon(android.R.drawable.stat_notify_chat)
+                    .setContentIntent(pi)
+                    .setAutoCancel(true)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                android.app.Notification.Builder(activity).setContentTitle(title).setContentText(text)
+                    .setSmallIcon(android.R.drawable.stat_notify_chat).setContentIntent(pi).setAutoCancel(true).build()
+            }
+            mgr.notify(id, n)
+            true
+        } catch (e: Exception) { false }
+    }
+    private fun ensureNotifyPermission() {
+        if (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            try { activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 4101) } catch (e: Exception) {}
+        }
     }
 
     // ---- 剪贴板 ----

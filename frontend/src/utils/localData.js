@@ -1,6 +1,7 @@
 /* global indexedDB */
 import { store } from '../store'
 import { collectText } from './dataBackup'
+import { isNativeHost, nativePickFolder, nativeWriteFolderText } from './platform' // 方案乙：SAF 选文件夹走原生宿主
 
 let dirHandle = null
 let dirName = ''
@@ -16,7 +17,27 @@ function saveHandle(h) {
     }
   } catch (e) {}
 }
+// 原生宿主(方案乙)：SAF 目录记忆
+let nativeTree = ''
+let nativeTreeName = ''
+function loadNativeTarget() {
+  try { nativeTree = localStorage.getItem('xc_native_tree') || ''; nativeTreeName = localStorage.getItem('xc_native_tree_name') || '' } catch (e) {}
+}
+function saveNativeTarget(uri, name) {
+  nativeTree = uri; nativeTreeName = name
+  try { localStorage.setItem('xc_native_tree', uri); localStorage.setItem('xc_native_tree_name', name) } catch (e) {}
+}
+loadNativeTarget()
+
 export async function pickDataFolder() {
+  if (isNativeHost()) {
+    const r = await nativePickFolder()
+    if (!r || !r.ok) throw new Error((r && r.error) || '未选择文件夹')
+    saveNativeTarget(r.treeUri, r.name)
+    dirName = r.name
+    startAutoFolderBackup()
+    return r.name
+  }
   if (!window.showDirectoryPicker) throw new Error('当前环境不支持“选文件夹”（请用 Chrome/Edge 桌面浏览器，或改用 📦导出全部数据/WebDAV 云同步）')
   try {
     dirHandle = await window.showDirectoryPicker()
@@ -53,10 +74,16 @@ async function getDir() {
   }
 }
 export async function getFolderName() {
+  if (isNativeHost()) { loadNativeTarget(); return nativeTree ? nativeTreeName : '' }
   await getDir()
   return dirName
 }
 export async function saveAllDataToFolder() {
+  if (isNativeHost()) {
+    loadNativeTarget()
+    if (!nativeTree) throw new Error('请先「选择保存文件夹」')
+    return nativeSaveAll()
+  }
   const h = await getDir()
   if (!h) throw new Error('请先「选择保存文件夹」')
   const write = async (name, content, type) => {
@@ -87,7 +114,17 @@ export function startAutoFolderBackup() {
     try { await saveAllDataToFolder() } catch (e) {}
   }, 45000)
 }
+// 原生宿主：向 SAF 目录写三件套
+async function nativeSaveAll() {
+  const wqMd = ['# 行测错题集', ''].concat(store.wqs.map((q, i) => i + '. 【' + (q.subject || '未分类') + '】' + (q.question || '') + ' 答案：' + (q.answer || '未填') + ' 错因：' + (q.reasons || []).join('、') + '')).join('')
+  const kbMd = ['# 行测知识库积累', ''].concat(store.myMem.map((m) => '【' + (m.type || '其他') + '】' + m.text)).join('')
+  const files = [['行测AI数据备份.json', collectText()], ['行测错题集.md', wqMd], ['行测知识库积累.md', kbMd]]
+  for (const [n, c] of files) { const r = await nativeWriteFolderText(nativeTree, n, c); if (!r.ok) throw new Error('写入失败：' + (r.error || n)) }
+  return nativeTreeName || nativeTree
+}
+
 // 下次启动自动恢复（此前已授权并保存过文件夹句柄）
 setTimeout(() => {
+  if (isNativeHost()) { loadNativeTarget(); if (nativeTree) startAutoFolderBackup(); return }
   getDir().then((h) => { if (h) startAutoFolderBackup() }).catch(() => {})
 }, 1600)

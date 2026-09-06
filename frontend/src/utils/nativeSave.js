@@ -4,8 +4,11 @@
 import { isPlusHost, downloadsAbsRoot, scanFile, isNativeHost } from './platform'
 import { collectText } from './dataBackup'
 
-export function detectNative() { return isPlusHost() }
-export function nativeRootName() { return downloadsAbsRoot() }
+export function detectNative() { return isPlusHost() || isNativeHost() }
+export function nativeRootName() {
+  if (isNativeHost()) return 'Download/行测AI导出' // 自建宿主：MediaStore 公共下载目录（文件管理可见）
+  return downloadsAbsRoot()
+}
 export function nativeWriteFile(name, text) {
   return new Promise((resolve, reject) => {
     if (isNativeHost()) {

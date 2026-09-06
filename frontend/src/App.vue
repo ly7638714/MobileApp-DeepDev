@@ -2798,7 +2798,7 @@ onUnmounted(() => {
             <button class="btn btn-gh" :disabled="isNative && !isNativeHost()" :title="isNative && !isNativeHost() ? '5+ 环境不支持（见说明）' : ''" @click="pickDir()">📁 选择保存文件夹</button>
             <button class="btn btn-pri" :disabled="isNative && !isNativeHost()" @click="saveDataDir()">💾 保存全部数据{{ isNativeHost() ? '' : '（桌面）' }}</button>
           <template v-if="isNative">
-            <div style="font-size: 11px; color: var(--hud-cyan); margin-top: 6px">📱 检测到原生安卓(HBuilderX)：原生备份写入 <b>{{ nativePath || '应用备份目录' }}</b>（注：该目录在部分系统/ROM 的文件管理里不可见；需要“找得到文件”请用「📤 分享/导出备份」另存到微信/网盘/文件管理器）</div>
+            <div style="font-size: 11px; color: var(--hud-cyan); margin-top: 6px">{{ isNativeHost() ? '📱 自建原生宿主：备份自动写入 <b>Download/行测AI导出/行测AI备份.json</b>（公共下载目录，文件管理/下载里可见）；点下方按钮可立即备份/45秒自动备份。' : '📱 5+App(HBuilderX)：原生备份写入 <b>' + (nativePath || '应用备份目录') + '</b>（该目录在部分系统/ROM 文件管理里不可见；需要“找得到文件”请用「📤 分享/导出备份」另存到微信/网盘/文件管理器）。' }}</div>
             <div class="exp-choices">
               <button class="btn btn-pri" @click="nativeNow()">📱 立即原生备份</button>
               <button class="btn btn-gh" @click="nativeToggle()">{{ nativeOn ? '⏸ 停用自动原生备份' : '▶ 启用自动原生备份(45s)' }}</button>

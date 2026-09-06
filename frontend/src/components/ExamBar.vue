@@ -7,6 +7,25 @@ import { startAmbient, stopAmbient } from '../utils/ambient'
 const now = ref(Date.now())
 const amb = ref(false)
 let timer = null
+// 顶栏信息条自动左右滑动（内容超宽时 ping-pong，避免显示不全）
+const track = ref(null)
+const ebPause = ref(false)
+function updTrack() {
+  const el = track.value
+  if (!el) return
+  try {
+    const parent = el.parentElement || el
+    const max = el.scrollWidth - parent.clientWidth // 轨道内容宽 vs 容器可视宽
+    if (max > 2) {
+      const dur = Math.max(8, Math.min(42, Math.round(max / 55)))
+      el.style.setProperty('--eb-dx', (-max) + 'px')
+      el.style.setProperty('--eb-dur', dur + 's')
+    } else {
+      el.style.setProperty('--eb-dx', '0px')
+      el.style.setProperty('--eb-dur', '24s')
+    }
+  } catch (e) {}
+}
 
 function tick() {
   now.value = Date.now()
@@ -87,9 +106,13 @@ onMounted(() => {
   timer = setInterval(tick, 1000)
   refreshTasks()
   evOn('xc-task-change', refreshTasks)
+  updTrack()
+  window.addEventListener('resize', updTrack)
+  setTimeout(updTrack, 350) // 字体/布局稳定后再测一次宽度
 })
 onUnmounted(() => {
   if (timer) clearInterval(timer)
+  window.removeEventListener('resize', updTrack)
   stopAmbient()
   evOff('xc-task-change', refreshTasks)
 })
@@ -97,6 +120,7 @@ onUnmounted(() => {
 
 <template>
   <div class="exam-bar">
+    <div ref="track" class="eb-track" :class="{ pause: ebPause }" @pointerenter="ebPause = true" @pointerleave="ebPause = false" @touchstart.passive="ebPause = true" @touchend="ebPause = false">
     <div class="eb-item eb-count" title="距考试">
       <span class="eb-ic">⏳</span>
       <button ref="exBtn" class="eb-exam-btn" :title="'切换考试（当前：' + (activeExam ? activeExam.name : '考试') + '）'" @click="toggleExams()">
@@ -121,6 +145,7 @@ onUnmounted(() => {
       <span class="eb-ic">{{ amb ? '🔊' : '🔇' }}</span>
       <span class="eb-lbl">{{ amb ? '氛围音开' : '氛围音' }}</span>
       <span v-if="amb" class="eb-wave"><i></i><i></i><i></i></span>
+    </div>
     </div>
     <div class="eb-scan" aria-hidden="true"></div>
   </div>
@@ -160,11 +185,29 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--text2);
 }
+.eb-track {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  will-change: transform;
+  animation: ebMarquee var(--eb-dur, 24s) ease-in-out infinite alternate;
+}
+.eb-track.pause { animation-play-state: paused; }
+.exam-bar:hover .eb-track { animation-play-state: paused; }
+@keyframes ebMarquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(var(--eb-dx, -120px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .eb-track { animation: none !important; }
+}
 .eb-item {
   display: flex;
   align-items: center;
   gap: 6px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .eb-ic { font-size: 13px; }
 .eb-lbl { opacity: 0.7; }

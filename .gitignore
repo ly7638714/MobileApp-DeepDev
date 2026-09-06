@@ -24,3 +24,5 @@ certini
 .vscode/
 .DS_Store
 Thumbs.db
+# 本机截图/临时（不入库）
+.shots/

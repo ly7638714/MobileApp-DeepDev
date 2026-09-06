@@ -105,6 +105,18 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
     @JavascriptInterface fun saveText(name: String, text: String): String = MediaStoreUtil.saveText(activity, name, text)
     @JavascriptInterface fun saveBinary(name: String, base64: String, mime: String): String = MediaStoreUtil.saveBinary(activity, name, base64, mime)
 
+    // ---- 真题卷包：App 内一键下载→解压→离线阅读 ----
+    private var packWait: Int = -1
+    @JavascriptInterface fun installZhentiPack(url: String, reqId: Int) {
+        packWait = reqId
+        Thread {
+            val r = ZhentiPack.install(activity, url)
+            web.post { eval("window.__xcOnPack && window.__xcOnPack($reqId, " + jsStr(r) + ")") }
+        }.start()
+    }
+    @JavascriptInterface fun listInternalPack(): String = ZhentiPack.list(activity)
+    @JavascriptInterface fun readInternalPack(rel: String): String = ZhentiPack.read(activity, rel)
+
     // ---- 真题PDF库：列目录 / 读PDF字节(base64) ----
     @JavascriptInterface fun listFolder(treeUri: String): String = FolderUtil.listTree(activity, treeUri)
     @JavascriptInterface fun readFileB64(uri: String): String {

@@ -26,6 +26,50 @@ async function loadBundle() {
     if (!groups.value.length) msg.value = '当前版本未内置真题包（用 _真题PDF入库.ps1 生成后再打包）'
   } catch (e) { groups.value = []; gSel.value = null; msg.value = '未找到内置真题包：' + (e && e.message || e) }
 }
+// ===== 在线真题卷包：App 内一键下载(zip)→解压→离线阅读（不占 APK）=====
+const PACK_URL = 'https://github.com/ly7638714/MobileApp-DeepDev/releases/download/zhenti-pack-v1/xingce-zhenti-pack-v1.zip'
+const packItems = ref([])
+const packMsg = ref('')
+const packBusy = ref(false)
+async function listPack() {
+  try {
+    const arr = JSON.parse(window.xcnative.listInternalPack() || '[]')
+    packItems.value = (arr || []).filter((it) => !it.dir && /pdf$/i.test(it.name)).sort((a, b) => (a.path < b.path ? -1 : 1))
+    if (!packItems.value.length) packMsg.value = '尚未安装真题卷包'
+    else packMsg.value = '已安装 ' + packItems.value.length + ' 份，点任意卷开始阅读（已离线，无需网络）'
+  } catch (e) { packMsg.value = '读取失败：' + e.message }
+}
+function installPack() {
+  if (packBusy.value) return
+  packBusy.value = true
+  packMsg.value = '正在下载并解压真题卷包（约 50MB，1-5 分钟，请保持网络）…'
+  window.__xcOnPack = (id, res) => {
+    packBusy.value = false
+    if (String(res).indexOf('ok:') === 0) { packMsg.value = '✅ 已安装 ' + String(res).slice(3) + ' 份' }
+    else packMsg.value = '下载失败：' + String(res).slice(4) + '（请检查网络后重试）'
+    listPack()
+  }
+  try { window.xcnative.installZhentiPack(PACK_URL, Math.floor(Math.random() * 90000) + 1000) } catch (e) { packBusy.value = false; packMsg.value = '调用失败：' + e.message }
+}
+async function openInternal(path) {
+  try {
+    msg.value = '加载 PDF…'
+    const b64 = window.xcnative.readInternalPack(path) || ''
+    if (String(b64).indexOf('ERR:') === 0) { msg.value = String(b64).slice(4); return }
+    const buf = b64ToU8(b64).buffer
+    await loadPdfData(String(path).split('/').pop(), buf)
+  } catch (e) { msg.value = '打开失败：' + (e && e.message || e) }
+}
+async function loadPdfData(name, dataBuf) {
+  try {
+    const pdfjsLib = await import('pdfjs-dist')
+    pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs'
+    const pdf = await pdfjsLib.getDocument({ data: dataBuf }).promise
+    try { if (pdfDoc) pdfDoc.destroy() } catch (e) {}
+    pdfDoc = pdf; pages.value = pdf.numPages; page.value = 1; pdfName.value = name; pdfUri.value = ''; scale.value = 1; viewer.value = true; msg.value = ''
+    await render()
+  } catch (e) { msg.value = '打开失败：' + (e && e.message || e) }
+}
 async function openBundled(rel) {
   try {
     busy.value = true; msg.value = '加载 PDF…'
@@ -119,9 +163,25 @@ onUnmounted(() => { try { if (pdfDoc) pdfDoc.destroy() } catch (e) {} })
       </div>
 
       <div class="zpv-modes">
+        <button class="zpv-mode" :class="{ on: srcMode === 'pack' }" @click="srcMode = 'pack'; listPack()">📥 真题卷包(在线)</button>
         <button class="zpv-mode" :class="{ on: srcMode === 'bundle' }" @click="srcMode = 'bundle'; loadBundle()">📦 内置真题包</button>
         <button class="zpv-mode" :class="{ on: srcMode === 'folder' }" @click="srcMode = 'folder'">📂 外部文件夹</button>
       </div>
+
+      <!-- 在线真题卷包：下载→列表→阅读 -->
+      <template v-if="srcMode === 'pack' && !viewer">
+        <div class="zpv-bread"><span class="zpv-tip">下载一次后离线可用（不占安装包）</span></div>
+        <div class="zpv-list">
+          <div v-if="packMsg" class="zpv-msg">{{ packMsg }}</div>
+          <div v-if="!packItems.length && !packBusy" class="zpv-empty">
+            <p>真题卷包含：国考 2022-2026（副省/地市/行政执法 15 卷）+ 贵州省考 2024-2026（3 卷），约 50MB。</p>
+            <button class="zpv-btn pri" @click="installPack()">📥 一键下载真题卷包</button>
+          </div>
+          <button v-for="(f, i) in packItems" :key="i" class="zpv-it" @click="openInternal(f.path)">
+            <span class="zpv-ic">📄</span><span class="zpv-name">{{ f.path }}</span>
+          </button>
+        </div>
+      </template>
 
       <!-- 内置真题包：组 → 卷 → 阅读 -->
       <template v-if="srcMode === 'bundle' && !viewer">

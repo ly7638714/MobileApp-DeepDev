@@ -24,6 +24,7 @@ import { getErrorLog, clearErrorLog } from './utils/errorLog'
 import { APP_VERSION } from './version'
 import { startStudyTrack, stopStudyTrack } from './utils/study'
 import { nav, navBack, syncNavFromHistory } from './utils/nav'
+import { installPlusBackBehavior, onHardwareBack, nativeToast } from './utils/platform' // ★安卓返回键/宿主桥
 import { webdavUpload, webdavDownload } from './utils/webdav'
 import { genLogSize, exportGenLog, clearGenLog } from './utils/quizLog'
 import { authState, authInit, authHasUsers, authRegister, authLogin, authLogout, authChangePass, authDeleteUser, authSetEnabled, authResetLocal } from './utils/auth'
@@ -1806,6 +1807,25 @@ function onKey(e) {
     }
   }
 }
+// ===== 安卓物理返回键（深度适配）：先回退内部浮层/面板（与桌面 Esc 同语义），未消费则双击退出 =====
+function handleAndroidBack() {
+  if (nav.stack.length) {
+    const e2 = navBack()
+    if (e2) window.dispatchEvent(new CustomEvent('app:nav-back', { detail: [e2.id] }))
+    return true
+  }
+  if (globalDraft.value) { globalDraft.value = false; gFabIntent.value = ''; return true }
+  if (moreShow.value) { moreShow.value = false; return true }
+  if (searchDrop.value) {
+    searchDrop.value = false
+    try { if (document.activeElement === searchInput.value) searchInput.value.blur() } catch (e) {}
+    return true
+  }
+  return false
+}
+const _unAndroidBack = onHardwareBack(handleAndroidBack)
+try { onUnmounted(() => { try { _unAndroidBack() } catch (e) {} }) } catch (e) {}
+installPlusBackBehavior({ onFirstBack: () => { try { nativeToast('再按一次退出') } catch (e) {} } })
 onMounted(() => {
   authGateInit()
   clampFloatPos()

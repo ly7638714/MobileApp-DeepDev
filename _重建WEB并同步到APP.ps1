@@ -26,8 +26,9 @@ try {
     if (-not (Test-Path $dist)) { throw 'dist 未生成，构建失败' }
   }
 } finally { Pop-Location }
-Write-Host '>>> 同步 dist -> xingce-app-shell/ ...'
-Copy-Item -LiteralPath (Join-Path $dist '*') -Destination $app -Recurse -Force
+Write-Host '>>> 同步 dist -> xingce-app-shell/（清理式，先清旧产物再整目录拷贝）...'
+Get-ChildItem -LiteralPath $app -Force | Where-Object { $_.Name -notin @('unpackage','manifest.json','README.md') } | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
+Copy-Item -Path (Join-Path $dist '*') -Destination $app -Recurse -Force
 # 剥离壳内 PWA/ServiceWorker 残留（网页端 PWA 保留在 frontend；壳内 file:// 不生效，纯浪费）
 Write-Host '>>> 剥离壳内 ServiceWorker 残留 ...'
 @('registerSW.js','sw.js','workbox-0bb07689.js','manifest.webmanifest') | ForEach-Object {

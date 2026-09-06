@@ -1,5 +1,6 @@
 /* global btoa */
-import { downloadText, downloadBlob, printPdf, pdfHtml, printImages } from './export/writers'
+import { downloadText, downloadBlob, printPdf, pdfHtml, printImages, exportPdfFile } from './export/writers'
+import { isNativeHost } from './platform'
 import { snapshotMd } from './capture'
 import { exportMdDocx, buildDocx, itemsToParagraphs, itemsToTables } from './export/docx'
 export { downloadText, downloadBlob, printPdf, pdfHtml } from './export/writers'
@@ -391,6 +392,11 @@ async function exportPdfShots(title, pages) {
     try { shots.push(await snapshotMd(pg.md, { title: pg.title || title })) } catch (e) {}
   }
   if (!shots.length) { printPdf(title, []); return }
+  if (isNativeHost()) {
+    // 原生宿主：生成真正的 .pdf 文件 → Download + 应用内弹窗（打开/分享）
+    try { await exportPdfFile(title, shots) } catch (e) { showToast('PDF 生成失败：' + (e && e.message || e), 'error') }
+    return
+  }
   printImages(title, shots)
 }
 export async function exportPaper(paper, marks, meta, format, polish, separate) {

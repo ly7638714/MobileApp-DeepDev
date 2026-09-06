@@ -36,6 +36,88 @@ export async function downloadBlob(blob, n) {
 }
 
 
+
+// ===== 手机端“真 PDF 文件”导出（v3.8.217）：把 PNG 页面合成 JPEG 图片版 PDF，纯 JS 无字体嵌入，WPS/浏览器可开 =====
+function b64ToBytes(b64) {
+  const bin = atob(String(b64 || ''))
+  const u8 = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i)
+  return u8
+}
+function pngToJpeg(pngDataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const cv = document.createElement('canvas')
+        cv.width = img.naturalWidth || img.width || 800; cv.height = img.naturalHeight || img.height || 1100
+        const g = cv.getContext('2d')
+        g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height)
+        g.drawImage(img, 0, 0, cv.width, cv.height)
+        resolve({ dataUrl: cv.toDataURL('image/jpeg', 0.92), w: cv.width, h: cv.height })
+      } catch (e) { resolve(null) }
+    }
+    img.onerror = () => resolve(null)
+    img.src = pngDataUrl
+  })
+}
+
+/** 把一组 PNG(dataURL) 页面拼成一个 .pdf Blob（A4 纵向，图片居中自适应）。 */
+export async function pagesToPdfBlob(pngDataUrls) {
+  const pages = []
+  for (const p of pngDataUrls || []) { const j = await pngToJpeg(p); if (j) pages.push(j) }
+  if (!pages.length) throw new Error('没有可导出的页面')
+  const W = 595.28, H = 841.89, M = 24
+  const enc = new TextEncoder()
+  const seg = []
+  const xref = []
+  let cursor = 0
+  const ascii = (s) => { const b = enc.encode(s); seg.push(b); cursor += b.length }
+  const raw = (b) => { seg.push(b); cursor += b.length }
+  const mark = () => { xref.push(cursor) }
+  const n = pages.length
+  ascii('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n')
+  // 1 Catalog, 2 Pages, 之后每页 3 个对象：page/content/image
+  mark(); ascii('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
+  mark();
+  let kids = ''
+  for (let k = 0; k < n; k++) kids += (3 + 3 * k) + ' 0 R '
+  ascii('2 0 obj\n<< /Type /Pages /Kids [' + kids + '] /Count ' + n + ' >>\nendobj\n')
+  for (let k = 0; k < n; k++) {
+    const pageObj = 3 + 3 * k, contentObj = 4 + 3 * k, imgObj = 5 + 3 * k
+    const p = pages[k]
+    const scale = Math.min((W - 2 * M) / p.w, (H - 2 * M) / p.h)
+    const dw = p.w * scale, dh = p.h * scale
+    const x = (W - dw) / 2, y = (H - dh) / 2
+    const content = 'q ' + dw.toFixed(2) + ' 0 0 ' + dh.toFixed(2) + ' ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' cm /Im' + k + ' Do Q'
+    mark(); ascii(pageObj + ' 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] /Resources << /XObject << /Im' + k + ' ' + imgObj + ' 0 R >> >> /Contents ' + contentObj + ' 0 R >>\nendobj\n')
+    const cBytes = enc.encode(content)
+    mark(); ascii(contentObj + ' 0 obj\n<< /Length ' + cBytes.length + ' >>\nstream\n'); raw(cBytes); ascii('\nendstream\nendobj\n')
+    const b64 = String(p.dataUrl).split(',')[1] || ''
+    const jbytes = b64ToBytes(b64)
+    mark(); ascii(imgObj + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + p.w + ' /Height ' + p.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jbytes.length + ' >>\nstream\n'); raw(jbytes); ascii('\nendstream\nendobj\n')
+  }
+  mark();
+  const xrefStart = cursor
+  ascii('xref\n0 ' + (2 + 3 * n) + '\n0000000000 65535 f \n')
+  for (const off of xref) ascii(String(off).padStart(10, '0') + ' 00000 n \n')
+  ascii('trailer\n<< /Size ' + (2 + 3 * n) + ' /Root 1 0 R >>\nstartxref\n' + xrefStart + '\n%%EOF')
+  const total = seg.reduce((a, b) => a + b.length, 0)
+  const out = new Uint8Array(total)
+  let at = 0
+  for (const b of seg) { out.set(b, at); at += b.length }
+  return new Blob([out], { type: 'application/pdf' })
+}
+
+/** 原生宿主：把页面截图导出为真 .pdf 文件（走 saveBinary → 保存 Download + 应用内弹窗打开/分享）；桌面返回 false 由调用方走打印。 */
+export async function exportPdfFile(title, pngDataUrls) {
+  if (!isNativeHost() || !window.xcnative) return false
+  const blob = await pagesToPdfBlob(pngDataUrls)
+  const safeName = (String(title || '导出').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)) + '.pdf'
+  await downloadBlob(blob, safeName)
+  return true
+}
+
 // v3.8.182 PDF 截图式打印：把一组渲染好的 PNG(dataURL) 排成多页打印
 export function printImages(title, pages) {
   if (isNativeHost()) { try { showToast('手机端暂不支持直接打印 PDF：请在电脑端导出，或使用「📷 截图/图片导出」', 'info') } catch (e) {}; return }

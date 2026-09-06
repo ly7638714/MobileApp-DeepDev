@@ -24,7 +24,7 @@ import { getErrorLog, clearErrorLog } from './utils/errorLog'
 import { APP_VERSION } from './version'
 import { startStudyTrack, stopStudyTrack } from './utils/study'
 import { nav, navBack, syncNavFromHistory } from './utils/nav'
-import { installPlusBackBehavior, onHardwareBack, nativeToast } from './utils/platform' // ★安卓返回键/宿主桥
+import { installPlusBackBehavior, installNativeBackBehavior, onHardwareBack, nativeToast, isNativeHost } from './utils/platform' // ★安卓返回键/宿主桥
 import { webdavUpload, webdavDownload } from './utils/webdav'
 import { genLogSize, exportGenLog, clearGenLog } from './utils/quizLog'
 import { authState, authInit, authHasUsers, authRegister, authLogin, authLogout, authChangePass, authDeleteUser, authSetEnabled, authResetLocal } from './utils/auth'
@@ -895,7 +895,7 @@ function goKb(it) {
 const dirLabel = ref('')
 const nativeOn = ref(false)
 const nativePath = ref('')
-const isNative = detectNative()
+const isNative = detectNative() || isNativeHost() // 5+ 或自建原生宿主(方案乙)都算原生环境
 if (isNative) { try { nativePath.value = nativeBackupPath() } catch (e) {} }
 if (isNative) { nativeOn.value = !!startNativeAutoBackup() } // 原生环境默认开启自动写入 Download
 async function nativeNow() {
@@ -1826,6 +1826,7 @@ function handleAndroidBack() {
 const _unAndroidBack = onHardwareBack(handleAndroidBack)
 try { onUnmounted(() => { try { _unAndroidBack() } catch (e) {} }) } catch (e) {}
 installPlusBackBehavior({ onFirstBack: () => { try { nativeToast('再按一次退出') } catch (e) {} } })
+if (isNativeHost()) { try { installNativeBackBehavior() } catch (e) {} } // 自建宿主：返回键走同一套 onHardwareBack 链
 onMounted(() => {
   authGateInit()
   clampFloatPos()

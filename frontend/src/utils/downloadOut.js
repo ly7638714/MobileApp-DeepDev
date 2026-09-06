@@ -5,7 +5,7 @@
 //   ② 文本/备份：原生写进 Download/行测AI导出/ 并提示完整路径；
 //   ③ 桌面浏览器：优先系统“另存为”对话框（showSaveFilePicker），兜底 a.click。
 // MobileApp-DeepDev 深度适配：宿主探测统一收口到 utils/platform.js（5+/自建宿主可切换）
-import { isPlusHost, scanFile } from './platform'
+import { isPlusHost, scanFile, isNativeHost } from './platform'
 function hasNative() { return isPlusHost() }
 function dataUrlToBlob(dataUrl) {
   const [head, body] = String(dataUrl || '').split(',')
@@ -38,6 +38,17 @@ function toAbs(path) {
 // 图片保存：原生→系统相册/分享；桌面→另存为对话框；兜底 a.click
 export async function saveImage(dataUrl, filename) {
   const name = String(filename || '截图').replace(/\.png$/i, '') + '.png'
+  if (isNativeHost()) {
+    // 方案乙：原生宿主走 MediaStore 公共相册（无需存储权限，国产 ROM 通用）
+    try {
+      const r = JSON.parse(window.xcnative.saveImage(dataUrl, name) || '{}')
+      try { if (window.showToast) window.showToast(r.ok ? ('✅ 已存入' + (r.where || '系统相册')) : ('保存失败：' + (r.error || '未知')), r.ok ? 'success' : 'error') } catch (e) {}
+      return { ok: !!r.ok, path: r.where || '', album: r.ok }
+    } catch (e) {
+      try { if (window.showToast) window.showToast('保存失败：' + e.message, 'error') } catch (_) {}
+      return { ok: false, error: e.message }
+    }
+  }
   if (hasNative()) {
     try {
       const rel = '_downloads/行测AI导出/' + name
@@ -83,6 +94,16 @@ export async function saveImage(dataUrl, filename) {
 // 文本保存：原生写 Download/行测AI导出；桌面走另存为；兜底 a.click
 export async function saveText(filename, text) {
   const name = String(filename || '导出.txt')
+  if (isNativeHost()) {
+    try {
+      const r = JSON.parse(window.xcnative.saveText(name, text) || '{}')
+      try { if (window.showToast) window.showToast(r.ok ? ('✅ 已存入 ' + (r.where || 'Download')) : ('保存失败：' + (r.error || '未知')), r.ok ? 'success' : 'error') } catch (e) {}
+      return { ok: !!r.ok, path: r.where || '' }
+    } catch (e) {
+      try { if (window.showToast) window.showToast('保存失败：' + e.message, 'error') } catch (_) {}
+      return { ok: false, error: e.message }
+    }
+  }
   if (hasNative()) {
     try {
       const rel = '_downloads/行测AI导出/' + name

@@ -13,6 +13,10 @@
 export function isPlusHost() {
   try { return !!(typeof window !== 'undefined' && window.plus && plus.os) } catch (e) { return false }
 }
+/** 自建原生宿主（方案乙，WebView + xcnative 桥；见 docs/方案乙-原生宿主架构.md） */
+export function isNativeHost() {
+  try { return !!(typeof window !== 'undefined' && window.xcnative) } catch (e) { return false }
+}
 export function isAndroidUA() {
   try { return /android/i.test(navigator.userAgent || '') } catch (e) { return false }
 }
@@ -22,6 +26,7 @@ export function isIOSUA() {
 /** hostKind(): 'plus' | 'browser'（未来: 'capacitor' / 'twa'） */
 export function hostKind() {
   if (isPlusHost()) return 'plus'
+  if (isNativeHost()) return 'nativehost'
   return 'browser'
 }
 /** 汇总平台快照，供设置页/调试显示 */
@@ -148,6 +153,7 @@ export function exportedDirLabel() {
 export async function setClipboard(text) {
   const t = String(text == null ? '' : text)
   if (!t) return false
+  if (isNativeHost()) { try { return !!window.xcnative.clipboardSet(t) } catch (e) {} }
   if (isPlusHost()) {
     try {
       const main = plus.android.runtimeMainActivity()
@@ -172,6 +178,7 @@ export async function setClipboard(text) {
 }
 /** 读剪贴板（多数 WebView 下不可用；plus 返回字符串，失败返回 null） */
 export async function getClipboard() {
+  if (isNativeHost()) { try { const v = window.xcnative.clipboardGet(); if (v) return String(v) } catch (e) {} }
   if (isPlusHost()) {
     try {
       const main = plus.android.runtimeMainActivity()
@@ -190,6 +197,7 @@ export async function getClipboard() {
 export function shareText(text, title) {
   const t = String(text == null ? '' : text)
   if (!t) return Promise.resolve(false)
+  if (isNativeHost()) { try { return !!window.xcnative.shareText(t, title || '') } catch (e) {} }
   if (isPlusHost()) {
     return new Promise((resolve) => {
       try {
@@ -232,6 +240,19 @@ let _backInstalled = false
  * 仅需在应用入口调用一次；浏览器下自动 no-op。
  * @param {object} [opt] { delay, onFirstBack } delay=双击间隔毫秒；onFirstBack 提示文案函数
  */
+/**
+ * 自建原生宿主（方案乙）返回键：宿主每次按返回会调 window.__xcConsumeBack()，
+ * 这里交给已注册的 onHardwareBack 链消费；未消费则宿主自行退出。
+ */
+export function installNativeBackBehavior() {
+  if (!isNativeHost()) return
+  try {
+    window.__xcConsumeBack = () => {
+      if (emitHardwareBack()) return true
+      return false
+    }
+  } catch (e) {}
+}
 export function installPlusBackBehavior(opt) {
   if (!isPlusHost() || _backInstalled) return
   _backInstalled = true
@@ -259,12 +280,14 @@ export function uninstallPlusBackBehavior() {
 /** 震动（毫秒）。plus 宿主优先，浏览器降级 navigator.vibrate */
 export function vibrate(ms) {
   const d = Number(ms) || 20
+  try { if (isNativeHost()) return false } catch (e) {}
   try { if (isPlusHost() && plus.device && plus.device.vibrate) { plus.device.vibrate(d); return true } } catch (e) {}
   try { if (navigator.vibrate) { navigator.vibrate(d); return true } } catch (e) {}
   return false
 }
 /** 系统原生 toast（5+）；非原生返回 false，由前端自有 toast 兜底 */
 export function nativeToast(msg) {
+  try { if (isNativeHost() && window.xcnative.toast) { window.xcnative.toast(String(msg || '')); return true } } catch (e) {}
   try { if (isPlusHost() && plus.nativeUI && plus.nativeUI.toast) { plus.nativeUI.toast(String(msg || '')); return true } } catch (e) {}
   return false
 }
@@ -291,9 +314,9 @@ export function exposePlatform() {
 }
 
 export default {
-  isPlusHost, hostKind, platformInfo, isAndroidUA, isIOSUA,
+  isPlusHost, isNativeHost, hostKind, platformInfo, isAndroidUA, isIOSUA,
   downloadsAbsRoot, toAbsolute, writeTextFile, writeBlobFile,
   setClipboard, getClipboard, shareText,
-  onHardwareBack, emitHardwareBack, exitApp, installPlusBackBehavior, uninstallPlusBackBehavior,
+  onHardwareBack, emitHardwareBack, exitApp, installPlusBackBehavior, installNativeBackBehavior, uninstallPlusBackBehavior,
   vibrate, nativeToast, openExternal, statusbarHeight, runtimeVersion, exposePlatform
 }

@@ -4,7 +4,7 @@
 import { toRefs, ref } from 'vue'
 import { addFlaggedQuestion } from '../utils/flaggedQuestions' // 37号 正确性加固B：疑题反馈
 import { showToast } from '../utils/toast'
-import { downloadLiveScreenshot } from '../utils/capture' // 成绩单整卷截图分享
+import { downloadLiveScreenshot, downloadMdScreenshot } from '../utils/capture' // 成绩单截图分享
 
 const props = defineProps({ ctx: { type: Object, required: true } })
 
@@ -21,6 +21,34 @@ const {
 } = props.ctx
 
 const shotBox = ref(null)
+const shotIdx = ref(0)
+function optLines(qq) {
+  const o = qq && qq.options
+  if (!o || !o.length) return ''
+  return o.map((x) => (typeof x === 'string' ? x : ((x && x.k) ? x.k + '. ' + (x.t != null ? x.t : '') : (x && x.t) || ''))).join('\n')
+}
+async function shotQuestion() {
+  const qs = questions && questions.value
+  const qq = qs && qs[shotIdx.value]
+  if (!qq) return showToast('请先选择题号', 'info')
+  const stem = String(qq.stem || qq.question || qq.q || '').trim()
+  const opts = optLines(qq)
+  const m = (marks && marks.value && marks.value[shotIdx.value]) || {}
+  const parts = []
+  parts.push(stem)
+  if (opts) parts.push(opts)
+  const meta = []
+  if (m && (m.pick || m.blank)) meta.push((m.blank ? '**我的作答：**未答' : '**我的作答：**' + m.pick))
+  if (qq.answer) meta.push('**正确答案：**' + qq.answer)
+  const ana = String(qq.explain || qq.analysis || '')
+  if (ana) parts.push(ana)
+  const md = parts.join('\n\n') + (meta.length ? '\n\n' + meta.join('\n') : '')
+  const no = String(qq.subject || '') ? qq.subject : ''
+  const nm = '成绩单第' + (shotIdx.value + 1) + '题_' + new Date().toISOString().slice(0, 10)
+  try {
+    await downloadMdScreenshot({ title: (curPaper && curPaper.value && curPaper.value.name) + ' · 第' + (shotIdx.value + 1) + '题', sub: no, md: md || '（本题内容为空）', name: nm })
+  } catch (e) { showToast('截图失败：' + (e && e.message || e), 'error') }
+}
 async function shotReport() {
   const el = shotBox.value
   if (!el) return showToast('尚未生成成绩单', 'info')
@@ -88,8 +116,13 @@ function flagQ(qq) {
       <!-- 导出收纳：默认折叠，需要时展开，减少成绩单臃肿感 -->
       <details class="ep-export-details">
         <summary>📤 导出整卷（Word / PDF / Markdown / LaTeX / Typst）{{ aiLayout ? ' · ✨ AI排版开' : '' }}</summary>
-        <div class="ep-export-row">
-          <button class="btn btn-gh ep-export-b" title="把整张成绩单截成高清图片（可存相册/分享到其它APP）" @click="shotReport()">📷 整卷截图分享</button>
+        <div class="ep-export-row" style="flex-wrap: wrap">
+          <span class="ep-export-l">📷 单题截图：</span>
+          <select v-model.number="shotIdx" style="max-width: 180px; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--glass-border); background: var(--surface); color: var(--text); font-size: 12px" title="选择要截图的题号">
+            <option v-for="(q, j) in questions" :key="j" :value="j">第 {{ j + 1 }} 题{{ q.subject ? ' · ' + q.subject : '' }}</option>
+          </select>
+          <button class="btn btn-gh ep-export-b" title="截图当前选中题目：完整题干+选项+作答+解析（与错题本截图一致，整题渲染）" @click="shotQuestion()">📷 截本题（题+解析）</button>
+          <button class="btn btn-gh ep-export-b" title="整张成绩单合成长图（较长，适合短卷）" @click="shotReport()">🖼 整卷长图</button>
           <span class="ep-export-l">选项：</span>
           <button class="btn btn-gh ep-export-b" :class="{ on: aiLayout }" :title="aiLayout ? 'AI 排版已开启：先梳理考点/错因/秒杀规律再导出' : 'AI 排版关闭：原样导出'" @click="aiLayout = !aiLayout">✨ {{ aiLayout ? 'AI排版开' : 'AI排版关' }}</button>
           <button class="btn btn-gh ep-export-b" :class="{ on: separateAns }" :title="separateAns ? '题答分离已开启：题目在前，答案解析集中到卷尾（适合打印重做）' : '题答分离关闭：答案解析跟在每题后'" @click="separateAns = !separateAns; if (separateAns && aiLayout) aiLayout = false">🧩 {{ separateAns ? '题答分离开' : '题答分离关' }}</button>

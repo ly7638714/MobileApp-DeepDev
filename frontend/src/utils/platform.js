@@ -178,7 +178,8 @@ export function emitHardwareBack() {
   return consumed
 }
 export function exitApp() {
-  try { if (isPlusHost()) plus.runtime.quit(); return true } catch (e) { return false }
+  try { if (isPlusHost()) { plus.runtime.quit(); return true } } catch (e) {}
+  return false
 }
 let _lastBackAt = 0
 let _backInstalled = false

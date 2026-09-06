@@ -3,7 +3,44 @@ import { showToast } from '../toast'
 import { getPayload } from './payload'
 import { downloadText, printPdf } from './writers'
 import { exportMdDocx, exportItemsDocx } from './docx'
+import { isNativeHost } from '../platform'
+import { exportPdfShots } from '../export' // 手机端：PDF 生成真文件
 import { aiPolish } from '../../api'
+// ===== 手机端 PDF：把 items(段落/表格/图) 转成分页 Markdown → 真 .pdf 文件；桌面保持原打印 =====
+function pdfItemsToPages(title, items) {
+  const pages = []
+  const rows = []
+  const flush = () => { if (rows.length) { pages.push({ md: rows.join('\n\n'), title }); rows.length = 0 } }
+  for (const it of items || []) {
+    if (!it) continue
+    if (it.type === 'h') { flush(); pages.push({ md: '## ' + String(it.text || ''), title }); continue }
+    if (it.type === 'table') {
+      const hd = (it.head || []).map((c) => '| ' + c + ' ').join('') + '|'
+      const sep = (it.head || []).map(() => '| --- ').join('') + '|'
+      const bd = (it.rows || []).map((r) => r.map((c) => '| ' + c + ' ').join('') + '|').join('\n')
+      rows.push(hd + '\n' + sep + '\n' + bd)
+      continue
+    }
+    const role = it.role === 'user' ? '🙋 我' : it.role === 'ai' ? '🤖 AI' : ''
+    let text = (role ? '**' + role + '**\n\n' : '') + String(it.text != null ? it.text : it)
+    for (const s of it.imgs || []) text += '\n\n![图片](' + s + ')'
+    rows.push(text)
+    if (rows.length >= 4) flush()
+  }
+  flush()
+  return pages
+}
+function pdfFromItems(title, items) {
+  if (isNativeHost()) {
+    const pages = pdfItemsToPages(title, items)
+    if (!pages.length) { showToast('无可导出的 PDF 内容', 'info'); return }
+    try { showToast('🧾 正在生成 PDF…', 'info') } catch (e) {}
+    exportPdfShots(title, pages).catch((e) => showToast('PDF 失败：' + (e && e.message || e), 'error'))
+    return
+  }
+  printPdf(title, items)
+}
+
 
 // ===== Obsidian 兼容：错题/复盘导出（frontmatter + callout + 标签 + 复选框）=====
 export function wqsToObsidianMd(wqs) {
@@ -330,7 +367,7 @@ export async function doExport(type, format, polish, template = 'full') {
     for (const it of pay.items || []) if (it.imgs && it.imgs.length) allImgs.push(...it.imgs)
     if (format === 'pdf') {
       const items = [{ type: 'msg', role: 'ai', text: md }, ...(allImgs.length ? [{ type: 'msg', role: 'user', text: '（原题截图）', imgs: allImgs }] : [])]
-      printPdf(t2, items)
+      pdfFromItems(t2, items)
     } else {
       // Markdown 与 docx：AI 正文后附原图
       const fullMd = md + (allImgs.length ? '\n\n## 原题截图\n' + allImgs.map((s) => '![图片](' + s + ')').join('\n\n') : '')
@@ -344,7 +381,7 @@ export async function doExport(type, format, polish, template = 'full') {
     return
   }
   if (format === 'pdf') {
-    printPdf(pay.title, pay.items)
+    pdfFromItems(pay.title, pay.items)
   } else {
     exportItemsDocx(pay.title, pay.items)
   }

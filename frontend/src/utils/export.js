@@ -386,12 +386,15 @@ function itemsToMdPages(items) {
   flush()
   return pages
 }
-async function exportPdfShots(title, pages) {
+export async function exportPdfShots(title, pages) {
   const shots = []
   for (const pg of pages) {
     try { shots.push(await snapshotMd(pg.md, { title: pg.title || title })) } catch (e) {}
   }
-  if (!shots.length) { printPdf(title, []); return }
+  if (!shots.length) {
+    if (isNativeHost()) { try { showToast('PDF 生成失败：页面渲染失败，请稍后重试或改用 Word/Markdown 导出', 'error') } catch (e) {} } else printPdf(title, [])
+    return
+  }
   if (isNativeHost()) {
     // 原生宿主：生成真正的 .pdf 文件 → Download + 应用内弹窗（打开/分享）
     try { await exportPdfFile(title, shots) } catch (e) { showToast('PDF 生成失败：' + (e && e.message || e), 'error') }

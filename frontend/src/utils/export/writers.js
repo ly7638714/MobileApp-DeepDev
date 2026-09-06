@@ -109,18 +109,24 @@ export async function pagesToPdfBlob(pngDataUrls) {
   return new Blob([out], { type: 'application/pdf' })
 }
 
-/** 原生宿主：把页面截图导出为真 .pdf 文件（走 saveBinary → 保存 Download + 应用内弹窗打开/分享）；桌面返回 false 由调用方走打印。 */
+/** 原生宿主：把页面截图导出为真 .pdf 文件，保存后【自动拉起系统其它 APP 打开/分享】；桌面返回 false 由调用方走打印。 */
 export async function exportPdfFile(title, pngDataUrls) {
   if (!isNativeHost() || !window.xcnative) return false
+  try { showToast('🧾 正在合成 PDF…（' + (pngDataUrls || []).length + ' 页）', 'info') } catch (e) {}
   const blob = await pagesToPdfBlob(pngDataUrls)
+  const b64 = await blobToBase64(blob)
   const safeName = (String(title || '导出').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)) + '.pdf'
-  await downloadBlob(blob, safeName)
+  const r = JSON.parse(window.xcnative.saveBinary(safeName, b64, 'application/pdf') || '{}')
+  if (!r.ok) { try { showToast('PDF 保存失败：' + (r.error || '未知'), 'error') } catch (e) {}; return false }
+  try { showToast('✅ PDF 已生成，正在调起其它 APP…', 'success') } catch (e) {}
+  try { exportDone({ kind: 'file', title: '📄 PDF 已导出', name: r.name || safeName, where: r.where || 'Download/行测AI导出', uri: r.uri, mime: 'application/pdf' }) } catch (e) {}
+  setTimeout(() => { try { if (r.uri) window.xcnative.shareUri(r.uri, 'application/pdf', r.name || safeName) } catch (e) {} }, 300)
   return true
 }
 
 // v3.8.182 PDF 截图式打印：把一组渲染好的 PNG(dataURL) 排成多页打印
 export function printImages(title, pages) {
-  if (isNativeHost()) { try { showToast('手机端暂不支持直接打印 PDF：请在电脑端导出，或使用「📷 截图/图片导出」', 'info') } catch (e) {}; return }
+  if (isNativeHost()) { try { showToast('手机端不支持系统打印：请在「导出面板」选 PDF 生成文件，或使用「📷 整卷截图分享」', 'info') } catch (e) {}; return }
   const w = window.open('', '_blank')
   if (!w) throw new Error('浏览器拦截了新窗口，请允许弹窗后重试')
   const html = '<!doctype html><html><head><meta charset="utf-8"><title>' + String(title || '导出').replace(/[<>&"]/g, '') + '</title>' +
@@ -192,7 +198,7 @@ export function pdfHtml(title, items) {
 }
 
 export function printPdf(title, items) {
-  if (isNativeHost()) { try { showToast('手机端暂不支持直接打印 PDF：请在电脑端导出，或使用「📷 截图/图片导出」', 'info') } catch (e) {}; return }
+  if (isNativeHost()) { try { showToast('手机端不支持系统打印：请在「导出面板」选 PDF 生成文件，或使用「📷 整卷截图分享」', 'info') } catch (e) {}; return }
   const w = window.open('', '_blank')
   if (!w) {
     showToast('浏览器拦截了弹窗，请允许', 'error')

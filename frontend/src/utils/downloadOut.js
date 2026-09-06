@@ -7,6 +7,9 @@
 // MobileApp-DeepDev 深度适配：宿主探测统一收口到 utils/platform.js（5+/自建宿主可切换）
 import { isPlusHost, scanFile, isNativeHost } from './platform'
 function hasNative() { return isPlusHost() }
+function withTimeout(p, ms, msg) {
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg || '系统未响应（写入超时）')), ms))])
+}
 function dataUrlToBlob(dataUrl) {
   const [head, body] = String(dataUrl || '').split(',')
   const m = /^data:([^;]*);base64/.exec(head)
@@ -43,6 +46,7 @@ export async function saveImage(dataUrl, filename) {
     try {
       const r = JSON.parse(window.xcnative.saveImage(dataUrl, name) || '{}')
       try { if (window.showToast) window.showToast(r.ok ? ('✅ 已存入' + (r.where || '系统相册')) : ('保存失败：' + (r.error || '未知')), r.ok ? 'success' : 'error') } catch (e) {}
+      if (r.ok && r.uri) { try { window.xcnative.shareUri(r.uri, 'image/png', r.name || name) } catch (e) {} } // 保存后弹系统分享：可见“其它APP打开/下载”
       return { ok: !!r.ok, path: r.where || '', album: r.ok }
     } catch (e) {
       try { if (window.showToast) window.showToast('保存失败：' + e.message, 'error') } catch (_) {}
@@ -52,13 +56,13 @@ export async function saveImage(dataUrl, filename) {
   if (hasNative()) {
     try {
       const rel = '_downloads/行测AI导出/' + name
-      await nativeWriteBytes(rel, dataUrlToBlob(dataUrl))
+      await withTimeout(nativeWriteBytes(rel, dataUrlToBlob(dataUrl)), 10000)
       const abs = toAbs(rel)
       try { scanFile(abs) } catch (e) {}
       let savedGallery = false
       try {
         if (plus.gallery && plus.gallery.save) {
-          await new Promise((res) => plus.gallery.save(abs, () => res(true), () => res(false)))
+          await withTimeout(new Promise((res) => plus.gallery.save(abs, () => res(true), () => res(false))), 8000)
           savedGallery = true
         }
       } catch (e) {}
@@ -107,7 +111,7 @@ export async function saveText(filename, text) {
   if (hasNative()) {
     try {
       const rel = '_downloads/行测AI导出/' + name
-      await new Promise((resolve, reject) => {
+      await withTimeout(new Promise((resolve, reject) => {
         plus.io.resolveLocalFileSystemURL('_downloads/', (root) => {
           root.getDirectory('行测AI导出', { create: true }, (dir) => {
             dir.getFile(name, { create: true }, (fe) => {
@@ -119,7 +123,7 @@ export async function saveText(filename, text) {
             }, () => reject(new Error('file error')))
           }, () => reject(new Error('dir error')))
         }, () => reject(new Error('downloads error')))
-      })
+      }), 10000)
       const abs = toAbs(rel)
       try { scanFile(abs) } catch (e) {}
       try { if (window.showToast) window.showToast('✅ 已生成备份文件（手机若找不到：到「设置→数据」用「📤 分享备份/导出」另存到微信/网盘）', 'success') } catch (e) {}

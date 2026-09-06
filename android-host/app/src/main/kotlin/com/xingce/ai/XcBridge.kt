@@ -82,6 +82,7 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
 
     // ---- 分享 ----
     @JavascriptInterface fun shareText(text: String, title: String): Boolean = ShareUtil.shareText(activity, text, title)
+    @JavascriptInterface fun shareUri(uriString: String, mime: String, name: String): Boolean = ShareUtil.shareUri(activity, uriString, mime, name)
     @JavascriptInterface fun shareFile(name: String, base64: String, mime: String): Boolean {
         val uri = MediaStoreUtil.insertMedia(activity, android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, name.ifBlank { "share_" + System.currentTimeMillis() }, mime.ifBlank { "application/octet-stream" }, "Download/" + "行测AI导出", android.util.Base64.decode(base64, android.util.Base64.DEFAULT)) ?: return false
         return ShareUtil.shareUri(activity, uri, mime, name)

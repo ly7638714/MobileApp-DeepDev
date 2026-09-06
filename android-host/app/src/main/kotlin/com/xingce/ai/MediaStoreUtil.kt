@@ -53,6 +53,23 @@ object MediaStoreUtil {
         return try {
             val resolver = ctx.contentResolver
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // 同名文件存在 → 覆盖（避免自动备份累积 “xxx (1)(2)…” 无数副本）
+                val sel = MediaStore.MediaColumns.DISPLAY_NAME + "=? AND " + MediaStore.MediaColumns.RELATIVE_PATH + "=?"
+                val selArgs = arrayOf(name, relPath)
+                var existingId = -1L
+                try {
+                    resolver.query(collection, arrayOf(MediaStore.MediaColumns._ID), sel, selArgs, null)?.use { c ->
+                        if (c.moveToFirst()) existingId = c.getLong(0)
+                    }
+                } catch (e: Exception) {}
+                if (existingId > 0) {
+                    val uri = android.content.ContentUris.withAppendedId(collection, existingId)
+                    val os = try { resolver.openOutputStream(uri, "wt") } catch (e: Exception) { resolver.openOutputStream(uri) }
+                    os?.use { it.write(bytes) } ?: return null
+                    val v2 = ContentValues().apply { put(MediaStore.MediaColumns.MIME_TYPE, mime) }
+                    try { resolver.update(uri, v2, null, null) } catch (e: Exception) {}
+                    return uri.toString()
+                }
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                     put(MediaStore.MediaColumns.MIME_TYPE, mime)

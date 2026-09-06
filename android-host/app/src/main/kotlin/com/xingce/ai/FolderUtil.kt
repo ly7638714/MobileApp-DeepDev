@@ -61,6 +61,17 @@ object FolderUtil {
             val parentDoc = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
             val bytes = Base64.decode(base64, Base64.DEFAULT)
             val mime = when { name.endsWith(".json") -> "application/json"; name.endsWith(".md") -> "text/markdown"; name.endsWith(".png") -> "image/png"; name.endsWith(".docx") -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; else -> "application/octet-stream" }
+            // 同名已存在 → 先删再建（覆盖），避免自动备份累积 (1)(2)… 副本
+            try {
+                val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
+                val sel = DocumentsContract.Document.COLUMN_DISPLAY_NAME + "=?"
+                ctx.contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), sel, arrayOf(name), null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        val oldUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(0))
+                        try { DocumentsContract.deleteDocument(ctx.contentResolver, oldUri) } catch (e: Exception) {}
+                    }
+                }
+            } catch (e: Exception) {}
             val fileUri = DocumentsContract.createDocument(ctx.contentResolver, parentDoc, mime, name) ?: return "err:create"
             ctx.contentResolver.openOutputStream(fileUri)?.use { it.write(bytes) } ?: return "err:stream"
             "ok:" + name

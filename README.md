@@ -19,6 +19,9 @@
    脚本会先找 `..\01_源码`；找不到就提示你手动把 `01_源码/dist` 内容拷进 `行测AI助手-APP深度开发/`。
 4. **云打包 APK**：HBuilderX 打开工程 → 发行 → 原生App-云打包 → 选 Android 证书。
 
+## 交接给 DeepSeek-Harness / WorkBuddy
+- 深度开发请先读 **`_交接与安卓模拟器适配指南.md`**（含安卓模拟器安装/运行/适配/单独设计清单）。
+
 ## 说明与约定
 - 本仓库 `.gitignore` 忽略 `unpackage/`（HBuilderX 构建缓存）、`.hbuilderx/`、`*.log`、`node_modules/`，其余（含 `assets/`、`zhenti/`）入库 → 克隆本仓库即可独立打开打包。
 - 主仓库的 `04_安卓/行测AI助手` 仍由 `scripts/sync-dist.ps1` 三端同步，与本独立项目**互不影响**。

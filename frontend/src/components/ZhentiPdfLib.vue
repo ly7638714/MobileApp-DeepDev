@@ -26,6 +26,24 @@ async function loadBundle() {
     if (!groups.value.length) msg.value = '当前版本未内置真题包（用 _真题PDF入库.ps1 生成后再打包）'
   } catch (e) { groups.value = []; gSel.value = null; msg.value = '未找到内置真题包：' + (e && e.message || e) }
 }
+// ===== 在线真题库（免费云端直链，pdf.js 实时流式读取；不占 APK、无需下载整包）=====
+const ONLINE_BASE = 'https://raw.githubusercontent.com/ly7638714/MobileApp-DeepDev/main/zhenti-online/'
+const ONLINE_GROUPS = [
+  { name: '国考2022-2026', files: ["2022年国家公务员考试《行测》真题（副省级).pdf","2022年国家公务员考试《行测》真题（地市级).pdf","2022年国家公务员考试《行测》真题（行政执法).pdf","2023年国家公务员录用考试《行测》副省级-题.pdf","2023年国家公务员录用考试《行测》地市级-题.pdf","2023年国家公务员录用考试《行测》行政执法-题.pdf","2024年国家公务员录用考试《行测》题（副省级）.pdf","2024年国家公务员录用考试《行测》题（地市级）.pdf","2024年国家公务员录用考试《行测》题（行政执法卷）.pdf","2025年国家公务员录用考试《行测》题（副省级）.pdf","2025年国家公务员录用考试《行测》题（地市级）.pdf","2025年国家公务员录用考试《行测》题（行政执法卷）.pdf","2026年国考《行测》（副省级）试卷.pdf","2026年国考《行测》（地市类）试卷.pdf","2026年国考《行测》（行政执法类）试卷.pdf"] },
+  { name: '贵州省考2024-2026', files: ["2024年贵州省公务员录用考试《行测》题（网友回忆版）.pdf","2025年贵州省公务员录用考试《行测》题（网友回忆版）.pdf","2026年贵州省公务员录用考试《行测》题（网友回忆版）.pdf"] }
+]
+const oG = ref(null)
+async function openOnline(gname, fname) {
+  try {
+    msg.value = '在线加载 PDF…（需联网，可逐页流式读取）'
+    const url = ONLINE_BASE + encodeURIComponent(gname) + '/' + encodeURIComponent(fname)
+    const res = await fetch(url, { cache: 'no-cache' })
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    const buf = await res.arrayBuffer()
+    await loadPdfData(fname, buf)
+  } catch (e) { msg.value = '在线加载失败：' + (e && e.message || e) + '（请检查网络后重试）' }
+}
+
 // ===== 在线真题卷包：App 内一键下载(zip)→解压→离线阅读（不占 APK）=====
 const PACK_URL = 'https://github.com/ly7638714/MobileApp-DeepDev/releases/download/zhenti-pack-v1/xingce-zhenti-pack-v1.zip'
 const packItems = ref([])
@@ -163,10 +181,32 @@ onUnmounted(() => { try { if (pdfDoc) pdfDoc.destroy() } catch (e) {} })
       </div>
 
       <div class="zpv-modes">
-        <button class="zpv-mode" :class="{ on: srcMode === 'pack' }" @click="srcMode = 'pack'; listPack()">📥 真题卷包(在线)</button>
+        <button class="zpv-mode" :class="{ on: srcMode === 'online' }" @click="srcMode = 'online'; oG = null">🌐 在线真题库</button>
+        <button class="zpv-mode" :class="{ on: srcMode === 'pack' }" @click="srcMode = 'pack'; listPack()">📥 真题卷包</button>
         <button class="zpv-mode" :class="{ on: srcMode === 'bundle' }" @click="srcMode = 'bundle'; loadBundle()">📦 内置真题包</button>
         <button class="zpv-mode" :class="{ on: srcMode === 'folder' }" @click="srcMode = 'folder'">📂 外部文件夹</button>
       </div>
+
+      <!-- 在线真题库：分组 → 卷 → 流式阅读 -->
+      <template v-if="srcMode === 'online' && !viewer">
+        <div class="zpv-bread">
+          <button class="zpv-link" @click="oG = null">全部组</button>
+          <template v-if="oG"><span class="zpv-sep">/</span><span class="zpv-name">{{ oG.name }}</span></template>
+          <span class="zpv-tip">🌐 免费云端直读 · 需联网（不下载整包）</span>
+        </div>
+        <div class="zpv-list">
+          <template v-if="!oG">
+            <button v-for="(g, gi) in ONLINE_GROUPS" :key="gi" class="zpv-it" @click="oG = g">
+              <span class="zpv-ic">📁</span><span class="zpv-name">{{ g.name }}</span><span class="zpv-tip">{{ (g.files || []).length }} 卷</span>
+            </button>
+          </template>
+          <template v-else>
+            <button v-for="(f, fi) in oG.files" :key="fi" class="zpv-it" @click="openOnline(oG.name, f)">
+              <span class="zpv-ic">📄</span><span class="zpv-name">{{ f }}</span>
+            </button>
+          </template>
+        </div>
+      </template>
 
       <!-- 在线真题卷包：下载→列表→阅读 -->
       <template v-if="srcMode === 'pack' && !viewer">

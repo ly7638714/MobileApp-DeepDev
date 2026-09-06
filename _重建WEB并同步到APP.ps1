@@ -1,7 +1,7 @@
 # 重建 01_源码 dist，并同步进本 APP 工程（HBuilderX 5+App 的 www 资源）
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
-$app  = Join-Path $here '行测AI助手-APP深度开发'
+$app  = Join-Path $here 'xingce-app-shell'
 # 独立项目：优先取“主仓库”的 01_源码；找不到则提示手动
 $src  = Join-Path $here '..\01_源码'
 if (-not (Test-Path (Join-Path $src 'package.json'))) {

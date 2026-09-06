@@ -1,4 +1,4 @@
-# 06_手机APP深度开发（【独立项目】/ 独立 git 仓库）
+# 06_MobileApp-DeepDev（【独立项目】/ 独立 git 仓库）
 
 > 本目录是一个**完全独立、与主仓库解耦**的 HBuilderX **5+App（HTML5+ 托管式）** 移动工程。
 > 已 `git init` 成独立仓库：`manifest.json` + 前端资源 `assets/` + 真题数据 `zhenti/` 都在本仓库内，可独自打开/打包，不依赖主仓库 git。
@@ -7,16 +7,16 @@
 ## 目录
 | 路径 | 说明 |
 |---|---|
-| `行测AI助手-APP深度开发/` | HBuilderX 工程（`manifest.json` + `assets/` + `zhenti/`） |
+| `xingce-app-shell/` | HBuilderX 工程（`manifest.json` + `assets/` + `zhenti/`） |
 | `README.md` | 本说明 |
 | `_重建WEB并同步到APP.ps1` | 从 `01_源码` 重建前端并同步进本工程（**需主仓库存在**；本仓库单独打包不依赖它） |
 
 ## 作为独立项目怎么用
-1. **独立开发外壳**：HBuilderX → 文件 → 导入 → 选本目录下的 `行测AI助手-APP深度开发`，改 `manifest.json`（图标/启动/权限/云打包）等。
+1. **独立开发外壳**：HBuilderX → 文件 → 导入 → 选本目录下的 `xingce-app-shell`，改 `manifest.json`（图标/启动/权限/云打包）等。
 2. **独立版本管理**：本目录已是独立 git 仓库（`git init` 完成），自己 `git add/commit/push` 即可，与主仓库 `kaogong-review-skill-main` 无关。
 3. **更新前端**（若你同时在主仓库 `01_源码` 改前端）：在**主仓库根**运行
-   `powershell -ExecutionPolicy Bypass -File "06_手机APP深度开发/_重建WEB并同步到APP.ps1"`
-   脚本会先找 `..\01_源码`；找不到就提示你手动把 `01_源码/dist` 内容拷进 `行测AI助手-APP深度开发/`。
+   `powershell -ExecutionPolicy Bypass -File "06_MobileApp-DeepDev/_重建WEB并同步到APP.ps1"`
+   脚本会先找 `..\01_源码`；找不到就提示你手动把 `01_源码/dist` 内容拷进 `xingce-app-shell/`。
 4. **云打包 APK**：HBuilderX 打开工程 → 发行 → 原生App-云打包 → 选 Android 证书。
 
 ## 交接给 DeepSeek-Harness / WorkBuddy

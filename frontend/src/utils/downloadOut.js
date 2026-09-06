@@ -52,7 +52,7 @@ export async function saveImage(dataUrl, filename) {
         }
       } catch (e) {}
       if (typeof window !== 'undefined' && window.showToast) {
-        try { window.showToast('✅ 已保存' + (savedGallery ? '到系统相册' : '到 Download/行测AI导出') + '：' + abs, 'success') } catch (e) {}
+        try { window.showToast(savedGallery ? '✅ 已存入系统相册（打开相册即可查看/发送）' : '⚠️ 相册导入未成功，文件位于应用目录（可用系统分享另存）', savedGallery ? 'success' : 'info') } catch (e) {}
       }
       return { ok: true, path: abs, album: savedGallery }
     } catch (e) {
@@ -101,7 +101,7 @@ export async function saveText(filename, text) {
       })
       const abs = toAbs(rel)
       try { scanFile(abs) } catch (e) {}
-      try { if (window.showToast) window.showToast('✅ 已保存：' + abs, 'success') } catch (e) {}
+      try { if (window.showToast) window.showToast('✅ 已生成备份文件（手机若找不到：到「设置→数据」用「📤 分享备份/导出」另存到微信/网盘）', 'success') } catch (e) {}
       return { ok: true, path: abs }
     } catch (e) {
       try { if (window.showToast) window.showToast('保存失败：' + e.message, 'error') } catch (_) {}

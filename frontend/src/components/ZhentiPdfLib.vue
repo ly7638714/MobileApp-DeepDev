@@ -26,22 +26,49 @@ async function loadBundle() {
     if (!groups.value.length) msg.value = '当前版本未内置真题包（用 _真题PDF入库.ps1 生成后再打包）'
   } catch (e) { groups.value = []; gSel.value = null; msg.value = '未找到内置真题包：' + (e && e.message || e) }
 }
-// ===== 在线真题库（免费云端直链，pdf.js 实时流式读取；不占 APK、无需下载整包）=====
+// ===== 在线真题库（多镜像自动切换：国内优先 jsDelivr，失败回落 GitHub raw）=====
 const ONLINE_BASE = 'https://raw.githubusercontent.com/ly7638714/MobileApp-DeepDev/main/zhenti-online/'
+const MIRRORS = [
+  { name: 'jsDelivr(国内加速)', base: 'https://cdn.jsdelivr.net/gh/ly7638714/MobileApp-DeepDev@main/zhenti-online/' },
+  { name: 'GitHub raw(备)', base: ONLINE_BASE }
+]
+function onlineMirrorOrder() {
+  const list = []
+  const seen = {}
+  try {
+    const order = JSON.parse(localStorage.getItem('xc_pdf_online_order') || 'null')
+    if (Array.isArray(order)) for (const n of order) { const m = MIRRORS.find((x) => x.name === n); if (m && !seen[n]) { list.push(m); seen[n] = 1 } }
+  } catch (e) {}
+  for (const m of MIRRORS) if (!seen[m.name]) list.push(m)
+  return list
+}
+function rememberOnlineOk(name) {
+  try {
+    const cur = onlineMirrorOrder().map((x) => x.name).filter((n) => n !== name)
+    cur.unshift(name)
+    localStorage.setItem('xc_pdf_online_order', JSON.stringify(cur))
+  } catch (e) {}
+}
 const ONLINE_GROUPS = [
   { name: '国考2022-2026', files: ["2022年国家公务员考试《行测》真题（副省级).pdf","2022年国家公务员考试《行测》真题（地市级).pdf","2022年国家公务员考试《行测》真题（行政执法).pdf","2023年国家公务员录用考试《行测》副省级-题.pdf","2023年国家公务员录用考试《行测》地市级-题.pdf","2023年国家公务员录用考试《行测》行政执法-题.pdf","2024年国家公务员录用考试《行测》题（副省级）.pdf","2024年国家公务员录用考试《行测》题（地市级）.pdf","2024年国家公务员录用考试《行测》题（行政执法卷）.pdf","2025年国家公务员录用考试《行测》题（副省级）.pdf","2025年国家公务员录用考试《行测》题（地市级）.pdf","2025年国家公务员录用考试《行测》题（行政执法卷）.pdf","2026年国考《行测》（副省级）试卷.pdf","2026年国考《行测》（地市类）试卷.pdf","2026年国考《行测》（行政执法类）试卷.pdf"] },
   { name: '贵州省考2024-2026', files: ["2024年贵州省公务员录用考试《行测》题（网友回忆版）.pdf","2025年贵州省公务员录用考试《行测》题（网友回忆版）.pdf","2026年贵州省公务员录用考试《行测》题（网友回忆版）.pdf"] }
 ]
 const oG = ref(null)
 async function openOnline(gname, fname) {
-  try {
-    msg.value = '在线加载 PDF…（需联网，可逐页流式读取）'
-    const url = ONLINE_BASE + encodeURIComponent(gname) + '/' + encodeURIComponent(fname)
-    const res = await fetch(url, { cache: 'no-cache' })
-    if (!res.ok) throw new Error('HTTP ' + res.status)
-    const buf = await res.arrayBuffer()
-    await loadPdfData(fname, buf)
-  } catch (e) { msg.value = '在线加载失败：' + (e && e.message || e) + '（请检查网络后重试）' }
+  const rel = encodeURIComponent(gname) + '/' + encodeURIComponent(fname)
+  const errs = []
+  for (const m of onlineMirrorOrder()) {
+    try {
+      msg.value = '在线加载中…（' + m.name + '）'
+      const res = await fetch(m.base + rel, { cache: 'no-cache' })
+      if (!res.ok) throw new Error('HTTP ' + res.status)
+      const buf = await res.arrayBuffer()
+      rememberOnlineOk(m.name)
+      await loadPdfData(fname, buf)
+      return
+    } catch (e) { errs.push(m.name + ':' + (e && e.message || e)) }
+  }
+  msg.value = '在线加载失败：' + errs.join('；') + '\n可改用「📥 真题卷包 / 📂外部文件夹」离线阅读，或稍后重试。'
 }
 
 // ===== 在线真题卷包：App 内一键下载(zip)→解压→离线阅读（不占 APK）=====

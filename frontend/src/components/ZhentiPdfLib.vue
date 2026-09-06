@@ -54,21 +54,64 @@ const ONLINE_GROUPS = [
   { name: '贵州省考2024-2026', files: ["2024年贵州省公务员录用考试《行测》题（网友回忆版）.pdf","2025年贵州省公务员录用考试《行测》题（网友回忆版）.pdf","2026年贵州省公务员录用考试《行测》题（网友回忆版）.pdf"] }
 ]
 const oG = ref(null)
-async function openOnline(gname, fname) {
-  const rel = encodeURIComponent(gname) + '/' + encodeURIComponent(fname)
+function bufToB64(buf) {
+  const u8 = new Uint8Array(buf); let bin = ''; const CH = 0x8000
+  for (let i = 0; i < u8.length; i += CH) bin += String.fromCharCode.apply(null, u8.subarray(i, i + CH))
+  return btoa(bin)
+}
+function cacheName(gname, fname) { return (String(gname).indexOf('国考') >= 0 ? 'gk' : 'gz') + '_' + String(fname).replace(/[^0-9A-Za-z\u4e00-\u9fa5._-]/g, '_') }
+async function readFromCache(cname, fname) {
+  try {
+    const b64 = window.xcnative.readCache(cname) || ''
+    if (String(b64).indexOf('ERR:') !== 0) { const buf = b64ToU8(b64).buffer; await loadPdfData(fname, buf); return true }
+  } catch (e) {}
+  return false
+}
+async function fetchFirstOk(rel) {
   const errs = []
   for (const m of onlineMirrorOrder()) {
     try {
       msg.value = '在线加载中…（' + m.name + '）'
       const res = await fetch(m.base + rel, { cache: 'no-cache' })
       if (!res.ok) throw new Error('HTTP ' + res.status)
-      const buf = await res.arrayBuffer()
       rememberOnlineOk(m.name)
-      await loadPdfData(fname, buf)
-      return
+      return await res.arrayBuffer()
     } catch (e) { errs.push(m.name + ':' + (e && e.message || e)) }
   }
-  msg.value = '在线加载失败：' + errs.join('；') + '\n可改用「📥 真题卷包 / 📂外部文件夹」离线阅读，或稍后重试。'
+  throw new Error(errs.join('；'))
+}
+async function cacheAllOnline() {
+  const total = ONLINE_GROUPS.reduce((a, g) => a + (g.files || []).length, 0)
+  let done = 0, ok = 0
+  msg.value = '开始缓存全部卷（0/' + total + '）…'
+  for (const g of ONLINE_GROUPS) {
+    for (const f of g.files || []) {
+      const cname = cacheName(g.name, f)
+      if (window.xcnative.cacheHas(cname)) { done++; ok++; continue }
+      try {
+        const rel = encodeURIComponent(g.name) + '/' + encodeURIComponent(f)
+        const buf = await fetchFirstOk(rel)
+        msg.value = '缓存中 ' + (done + 1) + '/' + total + '：' + f
+        window.xcnative.cacheSave(cname, bufToB64(buf))
+        ok++
+      } catch (e) { msg.value = '缓存失败于：' + f + '（' + (e && e.message || e) + '），可稍后重试' }
+      done++
+    }
+  }
+  msg.value = '✅ 缓存完成：' + ok + '/' + total + ' 份（之后可完全离线阅读；空间约 55MB）'
+}
+async function openOnline(gname, fname) {
+  const cname = cacheName(gname, fname)
+  try {
+    if (window.xcnative && window.xcnative.cacheHas && window.xcnative.cacheHas(cname)) {
+      msg.value = '读取本地缓存…'
+      if (await readFromCache(cname, fname)) return
+    }
+    const rel = encodeURIComponent(gname) + '/' + encodeURIComponent(fname)
+    const buf = await fetchFirstOk(rel)
+    await loadPdfData(fname, buf)
+    try { window.xcnative.cacheSave(cname, bufToB64(buf)) } catch (e) {} // 打开即缓存，下次离线可用
+  } catch (e) { msg.value = '在线加载失败：' + (e && e.message || e) + '\n可先用「缓存全部」或离线包，再重试。' }
 }
 
 // ===== 在线真题卷包：App 内一键下载(zip)→解压→离线阅读（不占 APK）=====
@@ -83,6 +126,27 @@ async function listPack() {
     if (!packItems.value.length) packMsg.value = '尚未安装真题卷包'
     else packMsg.value = '已安装 ' + packItems.value.length + ' 份，点任意卷开始阅读（已离线，无需网络）'
   } catch (e) { packMsg.value = '读取失败：' + e.message }
+}
+let zipInput = null
+function importZipLocal() {
+  if (!zipInput) { zipInput = document.createElement('input'); zipInput.type = 'file'; zipInput.accept = '.zip,application/zip' }
+  zipInput.onchange = async () => {
+    const f = zipInput.files && zipInput.files[0]
+    if (!f) return
+    try {
+      packBusy.value = true
+      packMsg.value = '正在导入并解压：' + f.name + '（50MB 需片刻）…'
+      const buf = await f.arrayBuffer()
+      window.__xcOnPack = (id, res) => {
+        packBusy.value = false
+        packMsg.value = String(res).indexOf('ok:') === 0 ? '✅ 已导入 ' + String(res).slice(3) + ' 份' : '导入失败：' + String(res).slice(4)
+        listPack()
+      }
+      window.xcnative.installZhentiPackB64(bufToB64(buf), Math.floor(Math.random() * 90000) + 1000)
+    } catch (e) { packBusy.value = false; packMsg.value = '导入失败：' + (e && e.message || e) }
+    zipInput.value = ''
+  }
+  zipInput.click()
 }
 function installPack() {
   if (packBusy.value) return
@@ -219,9 +283,10 @@ onUnmounted(() => { try { if (pdfDoc) pdfDoc.destroy() } catch (e) {} })
         <div class="zpv-bread">
           <button class="zpv-link" @click="oG = null">全部组</button>
           <template v-if="oG"><span class="zpv-sep">/</span><span class="zpv-name">{{ oG.name }}</span></template>
-          <span class="zpv-tip">🌐 免费云端直读 · 需联网（不下载整包）</span>
+          <span class="zpv-tip">🌐 云端直读 · 打开即缓存</span>
         </div>
         <div class="zpv-list">
+          <div style="padding:2px 0 8px"><button class="zpv-btn pri" @click="cacheAllOnline()">⏬ 缓存全部（一次搞定，之后离线可读）</button></div>
           <template v-if="!oG">
             <button v-for="(g, gi) in ONLINE_GROUPS" :key="gi" class="zpv-it" @click="oG = g">
               <span class="zpv-ic">📁</span><span class="zpv-name">{{ g.name }}</span><span class="zpv-tip">{{ (g.files || []).length }} 卷</span>
@@ -241,8 +306,9 @@ onUnmounted(() => { try { if (pdfDoc) pdfDoc.destroy() } catch (e) {} })
         <div class="zpv-list">
           <div v-if="packMsg" class="zpv-msg">{{ packMsg }}</div>
           <div v-if="!packItems.length && !packBusy" class="zpv-empty">
-            <p>真题卷包含：国考 2022-2026（副省/地市/行政执法 15 卷）+ 贵州省考 2024-2026（3 卷），约 50MB。</p>
-            <button class="zpv-btn pri" @click="installPack()">📥 一键下载真题卷包</button>
+            <p>真题卷包含：国考 2022-2026（15 卷）+ 贵州省考 2024-2026（3 卷），约 50MB。<br/>推荐：蓝奏/夸克下载 zip 后点下方“选择zip导入”（免直链、国内最稳）。</p>
+            <button class="zpv-btn pri" @click="importZipLocal()">📂 选择 zip 导入（推荐）</button>
+            <button class="zpv-btn" @click="installPack()">📥 在线一键下载</button>
           </div>
           <button v-for="(f, i) in packItems" :key="i" class="zpv-it" @click="openInternal(f.path)">
             <span class="zpv-ic">📄</span><span class="zpv-name">{{ f.path }}</span>

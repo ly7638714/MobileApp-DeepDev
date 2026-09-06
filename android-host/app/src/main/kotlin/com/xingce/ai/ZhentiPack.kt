@@ -66,6 +66,55 @@ object ZhentiPack {
     }
     private fun js(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
 
+    private fun cacheDir(ctx: Context): File = File(ctx.getExternalFilesDir(null), "zhenti-cache").apply { mkdirs() }
+    fun cacheHas(ctx: Context, name: String): Boolean = File(cacheDir(ctx), name).exists()
+    fun cacheSave(ctx: Context, name: String, b64: String): String {
+        return try {
+            val safe = name.replace(Regex("[^0-9A-Za-z._-]"), "_")
+            File(cacheDir(ctx), safe).writeBytes(Base64.decode(b64, Base64.DEFAULT))
+            "ok:" + safe
+        } catch (e: Exception) { "err:" + (e.message ?: "缓存失败") }
+    }
+    fun cacheRead(ctx: Context, name: String): String {
+        return try {
+            val f = File(cacheDir(ctx), name)
+            if (!f.exists()) return "ERR:无缓存"
+            val bytes = f.readBytes()
+            if (bytes.size > 140 * 1024 * 1024) return "ERR:文件过大"
+            Base64.encodeToString(bytes, Base64.NO_WRAP)
+        } catch (e: Exception) { "ERR:" + (e.message ?: "读取失败") }
+    }
+    /** 用本地已下载的 zip(base64) 安装卷包（配合系统文件选择/蓝奏下载后导入） */
+    fun installB64(ctx: Context, b64: String): String {
+        return try {
+            val zipFile = File(ctx.cacheDir, "zhenti_pack_local.zip")
+            zipFile.writeBytes(Base64.decode(b64, Base64.DEFAULT))
+            val root = dir(ctx)
+            root.listFiles()?.forEach { it.deleteRecursively() }
+            var count = 0; var total = 0L
+            ZipInputStream(zipFile.inputStream().buffered()).use { z ->
+                var e = z.nextEntry
+                while (e != null) {
+                    val name = e.name
+                    if (!name.contains("..") && !name.startsWith("/")) {
+                        val out = File(root, name)
+                        if (e.isDirectory) out.mkdirs()
+                        else {
+                            out.parentFile?.mkdirs()
+                            total += e.size
+                            if (total > TOTAL_LIMIT) return "err:包过大"
+                            FileOutputStream(out).use { fos -> z.copyTo(fos) }
+                            count++
+                        }
+                    }
+                    z.closeEntry(); e = z.nextEntry
+                }
+            }
+            zipFile.delete()
+            "ok:" + count
+        } catch (e: Exception) { "err:" + (e.message ?: "导入失败") }
+    }
+
     fun read(ctx: Context, rel: String): String {
         return try {
             val f = File(dir(ctx), rel)

@@ -115,6 +115,16 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
         }.start()
     }
     @JavascriptInterface fun listInternalPack(): String = ZhentiPack.list(activity)
+    // ---- 在线缓存 + 本地 zip 导入 ----
+    @JavascriptInterface fun installZhentiPackB64(b64: String, reqId: Int) {
+        Thread {
+            val r = ZhentiPack.installB64(activity, b64)
+            web.post { eval("window.__xcOnPack && window.__xcOnPack($reqId, " + jsStr(r) + ")") }
+        }.start()
+    }
+    @JavascriptInterface fun cacheHas(name: String): Boolean = ZhentiPack.cacheHas(activity, name)
+    @JavascriptInterface fun cacheSave(name: String, b64: String): String = ZhentiPack.cacheSave(activity, name, b64)
+    @JavascriptInterface fun readCache(name: String): String = ZhentiPack.cacheRead(activity, name)
     @JavascriptInterface fun readInternalPack(rel: String): String = ZhentiPack.read(activity, rel)
 
     // ---- 真题PDF库：列目录 / 读PDF字节(base64) ----

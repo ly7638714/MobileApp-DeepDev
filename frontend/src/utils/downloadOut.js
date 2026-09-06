@@ -6,6 +6,7 @@
 //   ③ 桌面浏览器：优先系统“另存为”对话框（showSaveFilePicker），兜底 a.click。
 // MobileApp-DeepDev 深度适配：宿主探测统一收口到 utils/platform.js（5+/自建宿主可切换）
 import { isPlusHost, scanFile, isNativeHost } from './platform'
+import { exportDone } from './exportFeedback'
 function hasNative() { return isPlusHost() }
 function withTimeout(p, ms, msg) {
   return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg || '系统未响应（写入超时）')), ms))])
@@ -45,8 +46,9 @@ export async function saveImage(dataUrl, filename) {
     // 方案乙：原生宿主走 MediaStore 公共相册（无需存储权限，国产 ROM 通用）
     try {
       const r = JSON.parse(window.xcnative.saveImage(dataUrl, name) || '{}')
-      try { if (window.showToast) window.showToast(r.ok ? ('✅ 已存入' + (r.where || '系统相册')) : ('保存失败：' + (r.error || '未知')), r.ok ? 'success' : 'error') } catch (e) {}
-      if (r.ok && r.uri) { try { window.xcnative.shareUri(r.uri, 'image/png', r.name || name) } catch (e) {} } // 保存后弹系统分享：可见“其它APP打开/下载”
+      if (r.ok) {
+        try { exportDone({ kind: 'image', title: '🖼 截图已保存', name: r.name || name, where: '系统相册「行测AI导出」', uri: r.uri, mime: 'image/png' }) } catch (e) {}
+      } else { try { if (window.showToast) window.showToast('保存失败：' + (r.error || '未知'), 'error') } catch (e) {} }
       return { ok: !!r.ok, path: r.where || '', album: r.ok }
     } catch (e) {
       try { if (window.showToast) window.showToast('保存失败：' + e.message, 'error') } catch (_) {}
@@ -101,7 +103,9 @@ export async function saveText(filename, text) {
   if (isNativeHost()) {
     try {
       const r = JSON.parse(window.xcnative.saveText(name, text) || '{}')
-      try { if (window.showToast) window.showToast(r.ok ? ('✅ 已存入 ' + (r.where || 'Download')) : ('保存失败：' + (r.error || '未知')), r.ok ? 'success' : 'error') } catch (e) {}
+      if (r.ok) {
+        try { exportDone({ kind: 'file', title: '📄 文件已导出', name: r.name || name, where: r.where || 'Download/行测AI导出', uri: r.uri, mime: 'text/plain' }) } catch (e) {}
+      } else { try { if (window.showToast) window.showToast('保存失败：' + (r.error || '未知'), 'error') } catch (e) {} }
       return { ok: !!r.ok, path: r.where || '' }
     } catch (e) {
       try { if (window.showToast) window.showToast('保存失败：' + e.message, 'error') } catch (_) {}

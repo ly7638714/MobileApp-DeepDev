@@ -1,8 +1,33 @@
 import { renderMd } from '../renderMd'
 import { escHtml } from './docx'
 import { showToast } from '../toast'
+import { isNativeHost } from '../platform' // 自建原生宿主(方案乙)：文件导出走 xcnative 公共 Download
+import { exportDone } from '../exportFeedback'
 
-export function downloadBlob(blob, n) {
+// Blob → base64（原生宿主保存二进制文件用）
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader()
+    fr.onload = () => { const r = fr.result; resolve(String(r).slice(String(r).indexOf(',') + 1)) }
+    fr.onerror = () => reject(new Error('读取文件失败'))
+    fr.readAsDataURL(blob)
+  })
+}
+function hostSaveResult(r, name) {
+  if (r.ok) {
+    try { exportDone({ kind: 'file', title: '📄 文件已导出', name: r.name || name, where: r.where || 'Download/行测AI导出', uri: r.uri, mime: 'application/octet-stream' }) } catch (e) {}
+  } else { try { showToast('导出失败：' + (r.error || '未知'), 'error') } catch (e) {} }
+}
+
+export async function downloadBlob(blob, n) {
+  if (isNativeHost() && window.xcnative) {
+    try {
+      const b64 = await blobToBase64(blob)
+      const r = JSON.parse(window.xcnative.saveBinary(n, b64, blob.type || 'application/octet-stream') || '{}')
+      hostSaveResult(r, n)
+      return
+    } catch (e) { try { showToast('导出失败：' + e.message, 'error') } catch (_) {} }
+  }
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = n
@@ -13,6 +38,7 @@ export function downloadBlob(blob, n) {
 
 // v3.8.182 PDF 截图式打印：把一组渲染好的 PNG(dataURL) 排成多页打印
 export function printImages(title, pages) {
+  if (isNativeHost()) { try { showToast('手机端暂不支持直接打印 PDF：请在电脑端导出，或使用「📷 截图/图片导出」', 'info') } catch (e) {}; return }
   const w = window.open('', '_blank')
   if (!w) throw new Error('浏览器拦截了新窗口，请允许弹窗后重试')
   const html = '<!doctype html><html><head><meta charset="utf-8"><title>' + String(title || '导出').replace(/[<>&"]/g, '') + '</title>' +
@@ -25,7 +51,14 @@ export function printImages(title, pages) {
   setTimeout(() => { try { w.focus(); w.print() } catch (e) {} }, 600)
 }
 
-export function downloadText(text, n, mime) {
+export async function downloadText(text, n, mime) {
+  if (isNativeHost() && window.xcnative) {
+    try {
+      const r = JSON.parse(window.xcnative.saveText(n, String(text)) || '{}')
+      hostSaveResult(r, n)
+      return
+    } catch (e) { try { showToast('导出失败：' + e.message, 'error') } catch (_) {} }
+  }
   const a = document.createElement('a')
   a.href = URL.createObjectURL(new Blob([text], { type: mime || 'text/plain;charset=utf-8' }))
   a.download = n
@@ -77,6 +110,7 @@ export function pdfHtml(title, items) {
 }
 
 export function printPdf(title, items) {
+  if (isNativeHost()) { try { showToast('手机端暂不支持直接打印 PDF：请在电脑端导出，或使用「📷 截图/图片导出」', 'info') } catch (e) {}; return }
   const w = window.open('', '_blank')
   if (!w) {
     showToast('浏览器拦截了弹窗，请允许', 'error')

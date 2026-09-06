@@ -1,7 +1,7 @@
 /* global plus */
 // nativeSave.js —— HBuilderX(5+App) 原生目录写入：把全量备份自动存到手机 Download（绕开网页“选文件夹”限制）
 // MobileApp-DeepDev 深度适配：宿主探测/根目录统一收口到 utils/platform.js（5+/自建宿主可切换）
-import { isPlusHost, downloadsAbsRoot } from './platform'
+import { isPlusHost, downloadsAbsRoot, scanFile } from './platform'
 import { collectText } from './dataBackup'
 
 export function detectNative() { return isPlusHost() }
@@ -12,7 +12,7 @@ export function nativeWriteFile(name, text) {
     plus.io.resolveLocalFileSystemURL('_downloads/', (root) => {
       root.getFile(name, { create: true }, (fe) => {
         fe.createWriter((writer) => {
-          writer.onwrite = () => resolve()
+          writer.onwrite = () => { try { scanFile(downloadsAbsRoot() + '/' + name) } catch (e) {}; resolve() }
           writer.onerror = (e) => reject(new Error('写入失败：' + ((e && e.message) || e)))
           writer.write(text)
         }, (e) => reject(new Error('创建写入器失败：' + ((e && e.message) || e))))

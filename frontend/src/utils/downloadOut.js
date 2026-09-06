@@ -5,7 +5,7 @@
 //   ② 文本/备份：原生写进 Download/行测AI导出/ 并提示完整路径；
 //   ③ 桌面浏览器：优先系统“另存为”对话框（showSaveFilePicker），兜底 a.click。
 // MobileApp-DeepDev 深度适配：宿主探测统一收口到 utils/platform.js（5+/自建宿主可切换）
-import { isPlusHost } from './platform'
+import { isPlusHost, scanFile } from './platform'
 function hasNative() { return isPlusHost() }
 function dataUrlToBlob(dataUrl) {
   const [head, body] = String(dataUrl || '').split(',')
@@ -43,6 +43,7 @@ export async function saveImage(dataUrl, filename) {
       const rel = '_downloads/行测AI导出/' + name
       await nativeWriteBytes(rel, dataUrlToBlob(dataUrl))
       const abs = toAbs(rel)
+      try { scanFile(abs) } catch (e) {}
       let savedGallery = false
       try {
         if (plus.gallery && plus.gallery.save) {
@@ -99,6 +100,7 @@ export async function saveText(filename, text) {
         }, () => reject(new Error('downloads error')))
       })
       const abs = toAbs(rel)
+      try { scanFile(abs) } catch (e) {}
       try { if (window.showToast) window.showToast('✅ 已保存：' + abs, 'success') } catch (e) {}
       return { ok: true, path: abs }
     } catch (e) {

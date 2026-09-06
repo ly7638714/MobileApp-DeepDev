@@ -3,6 +3,9 @@
   padding: 0;
   box-sizing: border-box;
 }
+/* 国产 ROM WebView 强制暗色免疫：显式声明页面配色方案（华为/小米/OPPO/vivo 深色模式不再硬反色） */
+html { color-scheme: light }
+html[data-theme='dark'] { color-scheme: dark }
 :root {
   --bg: #050b16;
   --card: #0b1626;

@@ -29,10 +29,23 @@ export function platformInfo() {
   const kind = hostKind()
   let os = 'web'
   let ver = ''
+  let vendor = ''
+  let model = ''
   try {
     if (kind === 'plus' && plus.os) { os = String(plus.os.name || 'android').toLowerCase(); ver = String(plus.os.version || '') }
+    if (kind === 'plus' && plus.android) {
+      const Build = plus.android.importClass('android.os.Build')
+      vendor = String(Build.MANUFACTURER || '')
+      model = String(Build.MODEL || '')
+    }
   } catch (e) {}
-  return { kind, isApp: kind !== 'browser', os, ver, isAndroid: kind === 'plus' ? os === 'android' : isAndroidUA(), isIOS: kind === 'plus' ? os === 'ios' : isIOSUA() }
+  if (!vendor) {
+    try {
+      const m = /(huawei|honor|xiaomi|redmi|oppo|vivo|oneplus|realme|samsung)/i.exec(navigator.userAgent || '')
+      if (m) vendor = m[1]
+    } catch (e) {}
+  }
+  return { kind, isApp: kind !== 'browser', os, ver, vendor, model, isAndroid: kind === 'plus' ? os === 'android' : isAndroidUA(), isIOS: kind === 'plus' ? os === 'ios' : isIOSUA() }
 }
 
 // ============ 文件（plus.io / 浏览器降级） ============
@@ -97,6 +110,37 @@ export function writeBlobFile(relPath, blob) {
     reader.onerror = () => reject(new Error('读取数据失败'))
     try { reader.readAsArrayBuffer(blob) } catch (e) { reject(e || new Error('readAsArrayBuffer 失败')) }
   })
+}
+
+// ============ 导出后“系统可见 + 跳转”能力（国产 ROM 文件管理器/图库/下载 兼容）============
+/** 通知系统扫描该文件（媒体库/文件管理器即时可见；Android 10+ Download 区一般自动，兼容老 ROM） */
+export function scanFile(absPath) {
+  try {
+    if (isPlusHost() && plus.android) {
+      const main = plus.android.runtimeMainActivity()
+      const Intent = plus.android.importClass('android.content.Intent')
+      const Uri = plus.android.importClass('android.net.Uri')
+      const File = plus.android.importClass('java.io.File')
+      const f = new File(String(absPath || ''))
+      if (f.exists()) {
+        const i = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(f))
+        main.sendBroadcast(i)
+        return true
+      }
+    }
+  } catch (e) {}
+  return false
+}
+/** 用系统应用打开已导出的文件（docx/pdf/md/截图…），拉起系统查看/分享/下载类应用；打不开返回 false */
+export function openExportedFile(absPath) {
+  try { if (isPlusHost() && plus.runtime && plus.runtime.openFile) { plus.runtime.openFile(String(absPath)); return true } } catch (e) {}
+  try { if (typeof window !== 'undefined' && window.__xcOpenExternal) return !!window.__xcOpenExternal(String(absPath)) } catch (e) {}
+  return false
+}
+/** 导出目录说明（toast/提示用） */
+export function exportedDirLabel() {
+  const r = downloadsAbsRoot()
+  return r ? r : 'Download/行测AI导出'
 }
 
 // ============ 剪贴板 ============

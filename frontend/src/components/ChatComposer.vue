@@ -1,6 +1,6 @@
 <script setup>
 // v3.8.196 6B·ChatPage 拆分：输入区+提问助手 子组件
-import { toRefs } from 'vue'
+import { toRefs, ref } from 'vue'
 const props = defineProps({ ctx: { type: Object, required: true } })
 const {
   ask,
@@ -33,6 +33,13 @@ const {
   pickImage,
   stopGenerate
 } = toRefs(props.ctx)
+
+// 输入工具栏：纵向弹出（失焦自动收回为 »）
+const toolsOpen = ref(false)
+let toolsBlurTimer = null
+function openTools() { clearTimeout(toolsBlurTimer); toolsOpen.value = true }
+function scheduleCloseTools() { clearTimeout(toolsBlurTimer); toolsBlurTimer = setTimeout(() => { toolsOpen.value = false }, 240) }
+function toggleTools() { clearTimeout(toolsBlurTimer); toolsOpen.value = !toolsOpen.value }
 </script>
 
 <template>
@@ -91,13 +98,15 @@ const {
             v-model="text"
             rows="1"
             :placeholder="inputPh"
+            @focus="openTools()"
+            @blur="scheduleCloseTools()"
             @keydown.enter.exact.prevent="send()"
           ></textarea>
-          <div class="dock-btns">
-          <button class="ib-btn wz-open" :class="{ on: !!wzSel }" title="🧭 四步发题向导：发送前先选 板块→细分→题型→意图，AI 不再猜题、按你的路径精准作答" @click="wzOpen = true">🧭</button>
-          <button class="ib-btn" :class="{ on: store.cfg.ttsOn !== false }" :title="(store.cfg.ttsOn !== false ? '自动朗读已开启，点击关闭' : '自动朗读已关闭，点击开启')" @click="toggleTts()">{{ store.cfg.ttsOn !== false ? '🔊' : '🔇' }}</button>
-          <button class="ib-btn" :style="{ color: recogOn ? 'var(--red)' : '' }" @click="toggleMic()">🎤</button>
-          <button class="ib-btn" @click="linkShow = !linkShow">🔗</button>
+          <div v-if="toolsOpen" class="dock-more" @mousedown.prevent>
+          <button class="ib-btn wz-open" :class="{ on: !!wzSel }" title="🧭 四步发题向导：发送前先选 板块→细分→题型→意图，AI 不再猜题、按你的路径精准作答" @click="wzOpen = true">🧭 发题向导</button>
+          <button class="ib-btn" :class="{ on: store.cfg.ttsOn !== false }" :title="(store.cfg.ttsOn !== false ? '自动朗读已开启，点击关闭' : '自动朗读已关闭，点击开启')" @click="toggleTts()">{{ store.cfg.ttsOn !== false ? '🔊 朗读开' : '🔇 朗读关' }}</button>
+          <button class="ib-btn" :style="{ color: recogOn ? 'var(--red)' : '' }" @click="toggleMic()">🎤 语音</button>
+          <button class="ib-btn" @click="linkShow = !linkShow">🔗 链接</button>
           <button
             class="ib-btn qm"
             :class="{ on: quickMode }"
@@ -105,9 +114,12 @@ const {
             @click="toggleQuickMode()"
           >{{ quickMode ? '⚡ 快答' : '🧠 深度' }}</button>
           <label class="ib-btn" style="display: flex; align-items: center; justify-content: center; cursor: pointer">
-            📷
+            📷 图片
             <input type="file" accept="image/*" style="display: none" @change="pickImage" />
           </label>
+          </div>
+          <div class="dock-btns">
+          <button class="ib-btn dock-toggle" :class="{ open: toolsOpen }" title="输入工具栏（展开/收起）" @mousedown.prevent="toggleTools()">»</button>
           </div>
           <button
             v-if="store.busy"

@@ -4899,3 +4899,22 @@ body[data-theme='light'] .ck-plan { background: #ffffff; }
 @media (max-width: 720px){ .dt-mat-scroll svg { min-width: 540px; } .dt-mat-scroll table { min-width: 560px; } }
 .dt-mat-scroll img { max-width: none !important; min-width: 100%; }
 @media (max-width: 720px){ .dt-mat-scroll img { min-width: 600px; } }
+
+/* ===== 输入工具栏：纵向弹出（ChatComposer v3.8.217）===== */
+.input-bar { position: relative; }
+.e-dock { position: relative; }
+.dock-more {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 60;
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+  min-width: 138px; padding: 10px;
+  background: rgba(10, 18, 32, 0.97);
+  border: 1px solid rgba(80, 200, 255, 0.25); border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+.dock-more .ib-btn {
+  width: 100%; justify-content: flex-start; gap: 8px;
+  padding: 8px 12px; border-radius: 10px; font-size: 12.5px;
+}
+.dock-toggle { transition: transform 0.18s ease; }
+.dock-toggle.open { transform: rotate(180deg); }

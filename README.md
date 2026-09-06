@@ -1,28 +1,32 @@
-# 06_MobileApp-DeepDev（【独立项目】/ 独立 git 仓库）
+# MobileApp-DeepDev · 行测AI助手（安卓深度适配独立项目）
 
-> 本目录是一个**完全独立、与主仓库解耦**的 HBuilderX **5+App（HTML5+ 托管式）** 移动工程。
-> 已 `git init` 成独立仓库：`manifest.json` + 前端资源 `assets/` + 真题数据 `zhenti/` 都在本仓库内，可独自打开/打包，不依赖主仓库 git。
-> 说明：5+App = WebView 壳 + 前端资源（非原生 Android Java/Kotlin；如需真原生/uni-app 请另建路线）。
+> 个人自用的「行测复盘 + 智能答疑」AI 助手安卓版。**非原生**：UI 由 Vue3 前端渲染，安卓侧用 HBuilderX 5+App（WebView 壳）承载；策略是**前端零重写、把安卓框架适配层做深**。
 
-## 目录
-| 路径 | 说明 |
-|---|---|
-| `xingce-app-shell/` | HBuilderX 工程（`manifest.json` + `assets/` + `zhenti/`） |
-| `README.md` | 本说明 |
-| `_重建WEB并同步到APP.ps1` | 从 `01_源码` 重建前端并同步进本工程（**需主仓库存在**；本仓库单独打包不依赖它） |
+本仓库自 2026-09-06 起**自包含**：前端源码 + 壳工程 + 构建脚本 + 全套文档都在这里，可独立构建与云打包。
 
-## 作为独立项目怎么用
-1. **独立开发外壳**：HBuilderX → 文件 → 导入 → 选本目录下的 `xingce-app-shell`，改 `manifest.json`（图标/启动/权限/云打包）等。
-2. **独立版本管理**：本目录已是独立 git 仓库（`git init` 完成），自己 `git add/commit/push` 即可，与主仓库 `kaogong-review-skill-main` 无关。
-3. **更新前端**（若你同时在主仓库 `01_源码` 改前端）：在**主仓库根**运行
-   `powershell -ExecutionPolicy Bypass -File "06_MobileApp-DeepDev/_重建WEB并同步到APP.ps1"`
-   脚本会先找 `..\01_源码`；找不到就提示你手动把 `01_源码/dist` 内容拷进 `xingce-app-shell/`。
-4. **云打包 APK**：HBuilderX 打开工程 → 发行 → 原生App-云打包 → 选 Android 证书。
+## 仓库布局
 
-## 交接给 DeepSeek-Harness / WorkBuddy
-- 深度开发请先读 **`_交接与安卓模拟器适配指南.md`**（含安卓模拟器安装/运行/适配/单独设计清单）。
+    frontend/            ★ 前端唯一活跃源码（Vue3 + Vite + PWA + 200+ 单测）
+    xingce-app-shell/    ★ HBuilderX 5+App 壳工程（manifest + assets + zhenti，可云打包）
+    开发说明.md           ★ 详细开发文档：架构/适配方案/构建/打包/Android 15 实测矩阵
+    _交接与安卓模拟器适配指南.md   模拟器安装/运行/适配检查清单
+    _重建WEB并同步到APP.ps1        前端构建→同步壳工程→剥离壳内 PWA（唯一同步入口）
 
-## 说明与约定
-- 本仓库 `.gitignore` 忽略 `unpackage/`（HBuilderX 构建缓存）、`.hbuilderx/`、`*.log`、`node_modules/`，其余（含 `assets/`、`zhenti/`）入库 → 克隆本仓库即可独立打开打包。
-- 主仓库的 `04_安卓/行测AI助手` 仍由 `scripts/sync-dist.ps1` 三端同步，与本独立项目**互不影响**。
-- 试用版：如需在本项目做试用 APK，请在主仓库 `01_源码` 单独 `vite build --mode trial --outDir dist-trial` 后把 `dist-trial` 内容同步进本工程，再云打包。
+## 快速开始
+
+1. 阅读 开发说明.md（架构与路线）→ _交接与安卓模拟器适配指南.md（模拟器执行清单）。
+2. 改前端：进入 frontend/，npm install 后 npm run dev / npm test。
+3. 同步与打包：仓库根运行 powershell -ExecutionPolicy Bypass -File "_重建WEB并同步到APP.ps1"，再用 HBuilderX 打开 xingce-app-shell 做「原生App-云打包」。
+4. 验证：安装到 Android 15 模拟器/真机，按 开发说明.md 第 6 节实测矩阵逐项打勾。
+
+## 架构一句话
+
+    业务(100+ 组件) → utils/storage.js(持久化) → src/utils/platform.js(★宿主桥) → 安卓宿主
+
+所有壳能力（剪贴板/分享/返回键/文件/震动/状态栏）统一收口在 src/utils/platform.js；业务代码禁止直接写 plus.*，宿主将来可从 5+App 平滑切换到自建 WebView 宿主。
+
+## 红线
+
+- 前端逻辑只改 frontend/；壳内 assets 是构建快照，由同步脚本刷新。
+- unpackage/、*.keystore、certdata、.env* 一律不入库不上传。
+- 本仓库为独立 git（origin = github.com/ly7638714/MobileApp-DeepDev），与主仓库 kaogong-review-skill-main 解耦、互不自动同步。

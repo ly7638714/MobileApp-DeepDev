@@ -1,22 +1,44 @@
-# 重建 01_源码 dist，并同步进本 APP 工程（HBuilderX 5+App 的 www 资源）
+# 重建前端 (frontend/) 并同步进 5+App 壳工程 (xingce-app-shell/)，并剥离壳内无意义的 PWA/ServiceWorker
+# 用法:
+#   powershell -ExecutionPolicy Bypass -File "_重建WEB并同步到APP.ps1"             # 构建并同步（正式）
+#   powershell -ExecutionPolicy Bypass -File "_重建WEB并同步到APP.ps1" -SkipBuild # 仅用已有 frontend/dist 同步
+# 说明（MobileApp-DeepDev 自包含后）：
+#   - 前端唯一活跃源码在本仓库 frontend/（npm install 后 npm run build 出 dist）；
+#   - 云打包用 xingce-app-shell/（HBuilderX 打开该目录 → 发行 → 原生App-云打包）。
+param([switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
-$app  = Join-Path $here 'xingce-app-shell'
-# 独立项目：优先取“主仓库”的 01_源码；找不到则提示手动
-$src  = Join-Path $here '..\01_源码'
-if (-not (Test-Path (Join-Path $src 'package.json'))) {
-  Write-Host '⚠️  未找到 ../01_源码（说明本目录已脱离主仓库）。'
-  Write-Host '   若你已在主仓库跑过 vite build，请把 01_源码/dist 下的内容手动拷到本工程的 assets/、并更新 index.html/sw.js 等。'
-  Write-Host '   或把本目录放进主仓库后再运行本脚本。'
+$fe  = Join-Path $here 'frontend'
+$app = Join-Path $here 'xingce-app-shell'
+$dist = Join-Path $fe 'dist'
+if (-not (Test-Path (Join-Path $fe 'package.json'))) {
+  Write-Host '⚠️  缺少 frontend/package.json —— 请先确认本仓库完整（frontend/ 未裁剪）。'
   exit 1
 }
-$dist = Join-Path $src 'dist'
-Push-Location $src
+Push-Location $fe
 try {
-  Write-Host '>>> vite build ...'
-  & npx.cmd vite build
-  if (-not (Test-Path $dist)) { throw 'dist 未生成' }
+  if ($SkipBuild) {
+    if (-not (Test-Path $dist)) { throw 'SkipBuild 已指定，但 frontend/dist 不存在' }
+    Write-Host '>>> 跳过构建，直接同步现有 dist ...'
+  } else {
+    Write-Host '>>> npm run build (frontend/) ...'
+    & npm.cmd run build
+    if (-not (Test-Path $dist)) { throw 'dist 未生成，构建失败' }
+  }
 } finally { Pop-Location }
-Write-Host '>>> 同步 dist -> APP 工程 ...'
+Write-Host '>>> 同步 dist -> xingce-app-shell/ ...'
 Copy-Item -LiteralPath (Join-Path $dist '*') -Destination $app -Recurse -Force
-Write-Host '✅ 已同步。可用 HBuilderX 打开工程并 云打包。'
+# 剥离壳内 PWA/ServiceWorker 残留（网页端 PWA 保留在 frontend；壳内 file:// 不生效，纯浪费）
+Write-Host '>>> 剥离壳内 ServiceWorker 残留 ...'
+@('registerSW.js','sw.js','workbox-0bb07689.js','manifest.webmanifest') | ForEach-Object {
+  $p = Join-Path $app $_
+  if (Test-Path $p) { Remove-Item $p -Force }
+}
+$idx = Join-Path $app 'index.html'
+if (Test-Path $idx) {
+  $html = [IO.File]::ReadAllText($idx)
+  $html = [regex]::Replace($html, '<script[^>]*registerSW\.js[^>]*></script>', '')
+  $html = [regex]::Replace($html, '<link[^>]*rel="manifest"[^>]*>', '')
+  [IO.File]::WriteAllText($idx, $html, (New-Object System.Text.UTF8Encoding($false)))
+}
+Write-Host '✅ 完成。可用 HBuilderX 打开 xingce-app-shell 云打包。'

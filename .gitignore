@@ -1,8 +1,26 @@
-# 独立项目 06_手机APP深度开发 —— 本地 .gitignore
-# HBuilderX 构建缓存/临时产物（不随源码入独立仓库）
+# ============ MobileApp-DeepDev 根 .gitignore ============
+# HBuilderX 构建缓存 / 云打包产物（含 APK、证书 keystore——一律不随源码上传）
 unpackage/
 .hbuilderx/
 *.log
 node_modules/
-# 若你希望前端资源(assets/)也由 01_源码 动态生成再同步，把这行也打开：
-# assets/  (注：打开后本仓库不可独立打包，需先跑 _重建WEB并同步到APP.ps1)
+# 前端构建产物（源码在 frontend/，产物不入库；壳内 assets 是已构建快照、另行入库）
+dist/
+dist-*
+# Vite/构建临时文件
+*.timestamp-*.mjs
+# 环境变量与密钥（严禁入库；.env.example 可留作模板）
+.env
+.env.*
+!.env.example
+# 签名 / 证书
+*.keystore
+*.jks
+*.p12
+certdata
+certini
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

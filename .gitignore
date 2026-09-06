@@ -26,3 +26,9 @@ certini
 Thumbs.db
 # 本机截图/临时（不入库）
 .shots/
+# 真题PDF 大文件：不入库（入库脚本从本地真题PDF源生成，重打包时注入 App）
+真题PDF源/
+frontend/public/zhenti-pdf/
+xingce-app-shell/zhenti-pdf/
+frontend/dist/zhenti-pdf/
+

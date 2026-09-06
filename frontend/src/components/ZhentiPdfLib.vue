@@ -1,0 +1,232 @@
+<script setup>
+// ZhentiPdfLib.vue —— 本地真题PDF卷库 + 内置阅读器（自建原生宿主·SAF 选文件夹；pdfjs 渲染）
+import { ref, onMounted, onUnmounted } from 'vue'
+import { isNativeHost, nativePickFolder } from '../utils/platform'
+import { showToast } from '../utils/toast'
+
+const emit = defineEmits(['close'])
+const tree = ref('')
+const treeName = ref('')
+try { tree.value = localStorage.getItem('xc_pdf_tree') || ''; treeName.value = localStorage.getItem('xc_pdf_tree_name') || '' } catch (e) {}
+const path = ref([]) // 目录栈：{name, uri}
+const items = ref([])
+const msg = ref('')
+// 内置真题包模式（随包 zhenti-pdf/index.json；用户无需自己有 PDF）
+const srcMode = ref('bundle')
+const groups = ref([])
+const gSel = ref(null)
+async function loadBundle() {
+  msg.value = ''
+  try {
+    const res = await fetch('./zhenti-pdf/index.json', { cache: 'no-cache' })
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    const j = await res.json()
+    groups.value = (j && j.groups) || []
+    gSel.value = null
+    if (!groups.value.length) msg.value = '当前版本未内置真题包（用 _真题PDF入库.ps1 生成后再打包）'
+  } catch (e) { groups.value = []; gSel.value = null; msg.value = '未找到内置真题包：' + (e && e.message || e) }
+}
+async function openBundled(rel) {
+  try {
+    busy.value = true; msg.value = '加载 PDF…'
+    const res = await fetch('./zhenti-pdf/' + rel, { cache: 'no-cache' })
+    if (!res.ok) throw new Error('读取失败')
+    const data = new Uint8Array(await res.arrayBuffer())
+    const pdfjsLib = await import('pdfjs-dist')
+    pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs'
+    const pdf = await pdfjsLib.getDocument({ data: data.buffer }).promise
+    try { if (pdfDoc) pdfDoc.destroy() } catch (e) {}
+    pdfDoc = pdf; pages.value = pdf.numPages; page.value = 1; pdfName.value = String(rel).split('/').pop(); pdfUri.value = ''; scale.value = 1; viewer.value = true; msg.value = ''
+    await render()
+  } catch (e) { msg.value = '打开失败：' + (e && e.message || e) } finally { busy.value = false }
+}
+const viewer = ref(false)
+const pdfName = ref('')
+const pdfUri = ref('')
+const page = ref(1)
+const pages = ref(0)
+const scale = ref(1)
+const busy = ref(false)
+const canvasEl = ref(null)
+let pdfDoc = null
+
+function storeTree(u, n) { tree.value = u; treeName.value = n; try { localStorage.setItem('xc_pdf_tree', u); localStorage.setItem('xc_pdf_tree_name', n) } catch (e) {} }
+async function pickRoot() {
+  if (!isNativeHost()) { showToast('请用自建原生宿主（当前不支持选择文件夹）', 'info'); return }
+  const r = await nativePickFolder()
+  if (!r || !r.ok) return
+  storeTree(r.treeUri, r.name); path.value = []; await load(r.treeUri)
+}
+async function load(uri) {
+  busy.value = true; msg.value = ''
+  try { const res = window.xcnative.listFolder(uri) || '[]'; const arr = JSON.parse(res); items.value = (arr || []).map((it) => ({ name: it.name, uri: it.uri, dir: !!it.dir })) } catch (e) { msg.value = '读取失败：' + e.message }
+  busy.value = false
+}
+function itemTap(it) { if (it.dir) { path.value.push({ name: it.name, uri: it.uri }); load(it.uri) } else if (/pdf$/i.test(it.name)) { openPdf(it.uri, it.name) } else { showToast('仅支持 PDF 文件', 'info') } }
+function upOne() { const p = path.value.pop(); if (p) load(p.uri) }
+function backToRoot() { path.value = []; if (tree.value) load(tree.value) }
+function b64ToU8(b64) {
+  const bin = atob(b64); const u8 = new Uint8Array(bin.length); const CH = 0x8000
+  for (let i = 0; i < bin.length; i += CH) { const sub = bin.substr(i, CH); for (let j = 0; j < sub.length; j++) u8[i + j] = sub.charCodeAt(j) }
+  return u8
+}
+async function openPdf(uri, name) {
+  try {
+    busy.value = true; msg.value = '加载 PDF…'
+    const b64 = window.xcnative.readFileB64(uri) || ''
+    if (String(b64).indexOf('ERR:') === 0) { msg.value = String(b64).slice(4); return }
+    const pdfjsLib = await import('pdfjs-dist')
+    pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs'
+    const pdf = await pdfjsLib.getDocument({ data: b64ToU8(b64).buffer }).promise
+    try { if (pdfDoc) pdfDoc.destroy() } catch (e) {}
+    pdfDoc = pdf; pages.value = pdf.numPages; page.value = 1; pdfName.value = name; pdfUri.value = uri; scale.value = 1; viewer.value = true; msg.value = ''
+    await render()
+  } catch (e) { msg.value = '打开失败：' + (e && e.message || e) } finally { busy.value = false }
+}
+async function render() {
+  if (!pdfDoc || !canvasEl.value) return
+  try {
+    const p = await pdfDoc.getPage(page.value)
+    const vp1 = p.getViewport({ scale: 1 })
+    const box = canvasEl.value.parentElement
+    const cw = Math.max(220, (box && box.clientWidth) || 900) - 16
+    const s = (cw / vp1.width) * scale.value
+    const vp = p.getViewport({ scale: s })
+    const cv = canvasEl.value; cv.width = vp.width; cv.height = vp.height
+    const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height)
+    await p.render({ canvasContext: ctx, viewport: vp }).promise
+  } catch (e) { msg.value = '渲染失败：' + (e && e.message || e) }
+}
+function prevPage() { if (page.value > 1) { page.value--; render() } }
+function nextPage() { if (page.value < pages.value) { page.value++; render() } }
+function zoomIn() { scale.value = Math.min(3, scale.value + 0.25); render() }
+function zoomOut() { scale.value = Math.max(0.5, scale.value - 0.25); render() }
+function fitW() { scale.value = 1; render() }
+function exitViewer() { try { if (pdfDoc) pdfDoc.destroy() } catch (e) {}; pdfDoc = null; viewer.value = false }
+function sysOpen() { if (!pdfUri.value) { showToast('内置真题包请在阅读器内查看（可整卷截图/逐页）', 'info'); return } try { window.xcnative.openUri(pdfUri.value, 'application/pdf') } catch (e) {} }
+function sysShare() { try { if (pdfUri.value) window.xcnative.shareUri(pdfUri.value, 'application/pdf', pdfName.value) } catch (e) {} }
+onMounted(() => { loadBundle() })
+onUnmounted(() => { try { if (pdfDoc) pdfDoc.destroy() } catch (e) {} })
+</script>
+
+<template>
+  <div class="zpv-mask" @click.self="$emit('close')">
+    <div class="zpv-panel">
+      <div class="zpv-top">
+        <button class="zpv-btn" @click="$emit('close')">← 返回</button>
+        <span class="zpv-title">📄 真题PDF卷库<span v-if="treeName" class="zpv-f">（{{ treeName }}）</span></span>
+        <button class="zpv-btn" @click="pickRoot()">📂 换文件夹</button>
+      </div>
+
+      <div class="zpv-modes">
+        <button class="zpv-mode" :class="{ on: srcMode === 'bundle' }" @click="srcMode = 'bundle'; loadBundle()">📦 内置真题包</button>
+        <button class="zpv-mode" :class="{ on: srcMode === 'folder' }" @click="srcMode = 'folder'">📂 外部文件夹</button>
+      </div>
+
+      <!-- 内置真题包：组 → 卷 → 阅读 -->
+      <template v-if="srcMode === 'bundle' && !viewer">
+        <div class="zpv-bread">
+          <button class="zpv-link" @click="gSel = null">全部组</button>
+          <template v-if="gSel"><span class="zpv-sep">/</span><span class="zpv-name">{{ gSel.name }}</span></template>
+          <span class="zpv-tip">{{ groups.length ? '分组' : '' }}</span>
+        </div>
+        <div class="zpv-list">
+          <div v-if="msg" class="zpv-msg">{{ msg }}</div>
+          <template v-if="!gSel">
+            <button v-for="(g, gi) in groups" :key="gi" class="zpv-it" @click="gSel = g">
+              <span class="zpv-ic">📁</span><span class="zpv-name">{{ g.name }}</span><span class="zpv-tip">{{ (g.files || []).length }} 卷</span>
+            </button>
+          </template>
+          <template v-else>
+            <button v-for="(f, fi) in gSel.files" :key="fi" class="zpv-it" @click="openBundled((gSel.name + '/' + f).replace(/^\/|\/$/g, ''))">
+              <span class="zpv-ic">📄</span><span class="zpv-name">{{ f.split('/').pop() }}</span>
+            </button>
+          </template>
+        </div>
+      </template>
+
+      <!-- 未选文件夹 -->
+      <template v-if="srcMode === 'folder' && !tree">
+      <div class="zpv-empty">
+        <p>选择存放“历年真题 PDF”的文件夹（夸克下载到手机也可），App 将按目录列出国考 / 各省真题卷。</p>
+        <button class="zpv-btn pri" @click="pickRoot()">📂 选择真题文件夹</button>
+      </div>
+      </template>
+      <div v-if="!tree" class="zpv-empty">
+        <p>选择存放“历年真题 PDF”的文件夹（夸克下载到手机也可），App 将按目录列出国考 / 各省真题卷。</p>
+        <button class="zpv-btn pri" @click="pickRoot()">📂 选择真题文件夹</button>
+      </div>
+
+      <!-- 文件列表（外部文件夹） -->
+      <template v-if="srcMode === 'folder' && tree && !viewer">
+        <div class="zpv-bread">
+          <button class="zpv-link" @click="backToRoot()">根目录</button>
+          <template v-for="(p, i) in path" :key="i">
+            <span class="zpv-sep">/</span>
+            <button class="zpv-link" @click="upOne()">{{ p.name }}</button>
+          </template>
+          <span class="zpv-tip">{{ busy ? '加载中…' : (items.length ? items.length + ' 项' : '') }}</span>
+        </div>
+        <div class="zpv-list">
+          <div v-if="msg" class="zpv-msg">{{ msg }}</div>
+          <button v-for="(it, i) in items" :key="i" class="zpv-it" @click="itemTap(it)">
+            <span class="zpv-ic">{{ it.dir ? '📁' : '📄' }}</span>
+            <span class="zpv-name">{{ it.name }}</span>
+          </button>
+          <div v-if="!items.length && !msg && !busy" class="zpv-empty">该文件夹内没有内容（需含 PDF）</div>
+        </div>
+      </template>
+
+      <!-- 内置 PDF 阅读器 -->
+      <template v-else>
+        <div class="zpv-vbar">
+          <button class="zpv-btn" @click="exitViewer()">⬅ 文件列表</button>
+          <span class="zpv-name">{{ pdfName }}</span>
+          <button v-if="pdfUri" class="zpv-btn" @click="sysOpen()">其它APP打开</button>
+          <button v-if="pdfUri" class="zpv-btn" @click="sysShare()">分享</button>
+        </div>
+        <div class="zpv-page"><canvas ref="canvasEl"></canvas><div v-if="msg" class="zpv-msg">{{ msg }}</div></div>
+        <div class="zpv-ctrl">
+          <button class="zpv-btn" @click="prevPage()" :disabled="page <= 1">‹ 上一页</button>
+          <span class="zpv-pg">第 {{ page }} / {{ pages }} 页</span>
+          <button class="zpv-btn" @click="nextPage()" :disabled="page >= pages">下一页 ›</button>
+          <span class="zpv-gap"></span>
+          <button class="zpv-btn" @click="zoomOut()">−</button>
+          <button class="zpv-btn" @click="fitW()" :title="'缩放：' + Math.round(scale * 100) + '%'">适应宽 {{ Math.round(scale * 100) }}%</button>
+          <button class="zpv-btn" @click="zoomIn()">+</button>
+        </div>
+      </template>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.zpv-mask { position: fixed; inset: 0; z-index: 980; background: rgba(2, 8, 18, 0.72); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 10px; }
+.zpv-panel { width: min(1000px, 98vw); height: 94vh; background: #0d1a2a; border: 1px solid rgba(80, 200, 255, 0.25); border-radius: 18px; display: flex; flex-direction: column; overflow: hidden; color: #eaf7ff; }
+.zpv-top { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid rgba(80, 200, 255, 0.16); }
+.zpv-title { flex: 1; font-weight: 700; font-size: 15px; }
+.zpv-f { font-size: 12px; color: var(--text3); font-weight: 400; }
+.zpv-btn { border: 1px solid rgba(80, 200, 255, 0.3); background: rgba(255, 255, 255, 0.06); color: #dbeafe; border-radius: 10px; padding: 7px 12px; font-size: 12.5px; cursor: pointer; flex-shrink: 0; }
+.zpv-btn.pri { background: linear-gradient(135deg, #22d3ee, #2f6fb3); color: #04121f; font-weight: 700; }
+.zpv-btn:disabled { opacity: 0.4; }
+.zpv-modes { display: flex; gap: 8px; padding: 8px 14px 0; }
+.zpv-mode { border: 1px solid rgba(80,200,255,.3); background: rgba(255,255,255,.05); color:#dbeafe; border-radius: 999px; padding: 6px 14px; font-size: 12.5px; cursor:pointer; }
+.zpv-mode.on { background: linear-gradient(135deg,#22d3ee,#2f6fb3); color:#04121f; font-weight:700; }
+.zpv-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #a9c9de; text-align: center; padding: 30px; font-size: 14px; }
+.zpv-bread { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 8px 14px; font-size: 12.5px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.zpv-link { background: none; border: none; color: var(--accent); cursor: pointer; padding: 2px 2px; font-size: 12.5px; }
+.zpv-sep { color: var(--text3); }
+.zpv-tip { margin-left: auto; color: var(--text3); }
+.zpv-list { flex: 1; overflow-y: auto; padding: 10px; }
+.zpv-it { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: rgba(255, 255, 255, 0.04); border: 1px solid transparent; border-radius: 12px; padding: 11px 12px; margin-bottom: 6px; color: #dbeafe; font-size: 14px; cursor: pointer; }
+.zpv-it:hover { border-color: rgba(80, 200, 255, 0.35); background: rgba(80, 200, 255, 0.08); }
+.zpv-ic { font-size: 18px; }
+.zpv-name { flex: 1; word-break: break-all; }
+.zpv-msg { color: #fbbf24; font-size: 13px; padding: 6px 2px; }
+.zpv-vbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.zpv-page { flex: 1; overflow: auto; background: #202a38; display: flex; flex-direction: column; align-items: center; padding: 10px; }
+.zpv-page canvas { box-shadow: 0 8px 30px rgba(0,0,0,0.5); max-width: 100%; }
+.zpv-ctrl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.zpv-pg { font-size: 13px; color: var(--hud-cyan); min-width: 86px; text-align: center; }
+.zpv-gap { flex: 1; }
+</style>

@@ -53,6 +53,34 @@ object FolderUtil {
         } catch (e: Exception) { treeUri.lastPathSegment ?: "" }
     }
 
+    /** 列出已授权文件夹下的子项（目录+PDF等）；返回 JSON 数组 */
+    fun listTree(ctx: Context, treeUriString: String): String {
+        return try {
+            val treeUri = Uri.parse(treeUriString)
+            val docId = DocumentsContract.getTreeDocumentId(treeUri)
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
+            val sb = StringBuilder("[")
+            var first = true
+            ctx.contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getString(0)
+                    val nm = c.getString(1) ?: "unnamed"
+                    val mime = c.getString(2) ?: ""
+                    val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id).toString()
+                    if (!first) sb.append(',')
+                    first = false
+                    sb.append('{')
+                        .append("\"name\":\"").append(jsEscape(nm)).append("\",\"uri\":\"").append(jsEscape(uri)).append("\",\"dir\":").append(isDir)
+                        .append('}')
+                }
+            }
+            sb.append(']')
+            sb.toString()
+        } catch (e: Exception) { "[]" }
+    }
+    private fun jsEscape(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\r", " ")
+
     /** 在已授权文件夹下创建/写入文件；返回 "ok:name" 或 "err:msg" */
     fun writeIntoFolder(ctx: Context, treeUriString: String, name: String, base64: String): String {
         return try {

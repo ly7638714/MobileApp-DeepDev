@@ -105,6 +105,18 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
     @JavascriptInterface fun saveText(name: String, text: String): String = MediaStoreUtil.saveText(activity, name, text)
     @JavascriptInterface fun saveBinary(name: String, base64: String, mime: String): String = MediaStoreUtil.saveBinary(activity, name, base64, mime)
 
+    // ---- 真题PDF库：列目录 / 读PDF字节(base64) ----
+    @JavascriptInterface fun listFolder(treeUri: String): String = FolderUtil.listTree(activity, treeUri)
+    @JavascriptInterface fun readFileB64(uri: String): String {
+        return try {
+            val ins = activity.contentResolver.openInputStream(android.net.Uri.parse(uri)) ?: return "ERR:打开失败"
+            ins.use { it.readBytes() }.let { bytes ->
+                if (bytes.size > 140 * 1024 * 1024) return "ERR:文件过大"
+                android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            }
+        } catch (e: Exception) { "ERR:" + (e.message ?: "读取失败") }
+    }
+
     // ---- SAF 文件夹 ----
     @JavascriptInterface fun pickFolder(requestId: Int) {
         pendingPick = requestId

@@ -15,6 +15,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug") // 便于直接安装测试；正式发布再换正式签名
         }
     }
     compileOptions {

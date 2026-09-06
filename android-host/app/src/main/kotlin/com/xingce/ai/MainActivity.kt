@@ -19,6 +19,12 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 刘海/状态栏适配：不进入 edge-to-edge，让系统状态栏单独占位，页面从状态栏之下开始（顶栏按钮不会被遮挡）
+        try { if (android.os.Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(true) } catch (e: Exception) {}
+        try {
+            val c = android.graphics.Color.parseColor("#050b16")
+            if (android.os.Build.VERSION.SDK_INT >= 21) { window.statusBarColor = c; window.navigationBarColor = c }
+        } catch (e: Exception) {}
         web = WebView(this)
         setContentView(web)
         val s: WebSettings = web.settings

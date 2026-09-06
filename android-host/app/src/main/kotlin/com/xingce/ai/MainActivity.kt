@@ -43,11 +43,33 @@ class MainActivity : Activity() {
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return false
-                return if (url.startsWith("file://") || url.startsWith("about:")) false else { view?.loadUrl(url); false }
+                // 外链（官媒用法/网页链接/文档）→ 调起系统浏览器或已装的其它 APP，绝不在 App 内嵌打开（否则无返回键被困）
+                if (!url.startsWith("file://") && !url.startsWith("about:") && !url.startsWith("javascript:")) {
+                    openExternal(url)
+                    return true
+                }
+                return false
             }
         }
 
         web.webChromeClient = object : WebChromeClient() {
+            // target=_blank / window.open 的外链也交给系统浏览器（不新建内嵌窗口）
+            override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message?): Boolean {
+                return try {
+                    val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+                    val dummy = WebView(this@MainActivity)
+                    dummy.webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(v: WebView?, r: WebResourceRequest?): Boolean {
+                            val u = r?.url?.toString() ?: return false
+                            if (u.startsWith("http://") || u.startsWith("https://")) { openExternal(u); return true }
+                            return false
+                        }
+                    }
+                    transport.webView = dummy
+                    resultMsg?.sendToTarget()
+                    true
+                } catch (e: Exception) { false }
+            }
             override fun onShowFileChooser(webView: WebView?, filePathCallback: ValueCallback<Array<Uri>>?, fileChooserParams: FileChooserParams?): Boolean {
                 this@MainActivity.filePathCallback?.onReceiveValue(null)
                 this@MainActivity.filePathCallback = filePathCallback
@@ -68,6 +90,19 @@ class MainActivity : Activity() {
         }
 
         web.loadUrl("file:///android_asset/www/index.html")
+    }
+
+    /** 外链统一交给系统（浏览器 / 已装的官方媒体等其它 APP），不在 App 内嵌打开 */
+    private fun openExternal(url: String) {
+        try {
+            val i = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+            activityStartChooser(i)
+        } catch (e: Exception) {
+            try { web.loadUrl(url) } catch (e2: Exception) {}
+        }
+    }
+    private fun activityStartChooser(i: Intent) {
+        try { startActivity(Intent.createChooser(i, "选择打开方式")) } catch (e: Exception) { try { startActivity(i) } catch (e2: Exception) {} }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

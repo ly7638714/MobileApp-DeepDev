@@ -2792,12 +2792,12 @@ onUnmounted(() => {
         <div id="set-data" class="sec-t">💾 数据保存位置（本地文件夹）</div>
         <div class="sec-desc">数据保存位置与迁移：本地文件夹 / 导出导入备份 / WebDAV 云同步 / 时政范围。</div>
         <div class="fld">
-          <label>电脑端（桌面 Chrome/Edge）：选择文件夹后，可一键/自动把全部数据保存进去；手机端浏览器无“选文件夹写权限”，请用下方「📱 手机端保存/分享备份」或 WebDAV</label>
+          <label>{{ isNative ? '⚠️ 此「选择文件夹」为桌面浏览器专属功能，手机系统不允许网页直接选文件夹写盘（点按钮无反应属正常）。手机请使用下方「📱 原生备份 / 📤 分享备份」或 WebDAV，可存到微信/网盘/任意位置。' : '电脑端（桌面 Chrome/Edge）：选择文件夹后，可一键/自动把全部数据保存进去；其它浏览器不支持。' }}</label>
           <div class="exp-choices">
-            <button class="btn btn-gh" @click="pickDir()">📁 选择保存文件夹</button>
-            <button class="btn btn-pri" @click="saveDataDir()">💾 保存全部数据</button><button class="btn btn-pri" @click="saveDataDir()">💾 保存全部数据</button>
+            <button class="btn btn-gh" :disabled="isNative" :title="isNative ? '手机端不支持（见说明）' : ''" @click="pickDir()">📁 选择保存文件夹</button>
+            <button class="btn btn-pri" :disabled="isNative" @click="saveDataDir()">💾 保存全部数据（桌面）</button>
           <template v-if="isNative">
-            <div style="font-size: 11px; color: var(--hud-cyan); margin-top: 6px">📱 检测到原生安卓(HBuilderX)：全量备份可自动写入 <b>{{ nativePath || '手机 Download/行测AI备份.json' }}</b></div>
+            <div style="font-size: 11px; color: var(--hud-cyan); margin-top: 6px">📱 检测到原生安卓(HBuilderX)：原生备份写入 <b>{{ nativePath || '应用备份目录' }}</b>（注：该目录在部分系统/ROM 的文件管理里不可见；需要“找得到文件”请用「📤 分享/导出备份」另存到微信/网盘/文件管理器）</div>
             <div class="exp-choices">
               <button class="btn btn-pri" @click="nativeNow()">📱 立即原生备份</button>
               <button class="btn btn-gh" @click="nativeToggle()">{{ nativeOn ? '⏸ 停用自动原生备份' : '▶ 启用自动原生备份(45s)' }}</button>

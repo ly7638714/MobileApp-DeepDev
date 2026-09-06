@@ -15,6 +15,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:theme="@android:style/Theme.Black.NoTitleBar"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
             android:launchMode="singleTask">
             <intent-filter>

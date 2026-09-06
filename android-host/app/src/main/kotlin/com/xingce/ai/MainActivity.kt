@@ -19,6 +19,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestWindowFeature(android.view.Window.FEATURE_NO_TITLE) // 去掉系统 ActionBar（应用名标题条）
         // 全屏沉浸式（同原 5+App 全屏体验）：隐藏系统状态栏/导航栏，内容铺满全屏；
         // 刘海/挖孔区域由 WebView 上报 env(safe-area-inset-*)，前端 CSS .app 已用 safe-area 自动避让，顶栏按钮不会被遮挡。
         hideSystemBars()

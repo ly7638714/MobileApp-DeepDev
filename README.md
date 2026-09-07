@@ -11,13 +11,15 @@
     开发说明.md           ★ 详细开发文档：架构/适配方案/构建/打包/Android 15 实测矩阵
     _交接与安卓模拟器适配指南.md   模拟器安装/运行/适配检查清单
     _重建WEB并同步到APP.ps1        前端构建→同步壳工程→剥离壳内 PWA（唯一同步入口）
+    _打包APK分发.ps1               编译 debug APK → 自动复制到 APK/ 供真机分发
 
 ## 快速开始
 
 1. 阅读 开发说明.md（架构与路线）→ _交接与安卓模拟器适配指南.md（模拟器执行清单）。
 2. 改前端：进入 frontend/，npm install 后 npm run dev / npm test。
 3. 同步与打包：仓库根运行 powershell -ExecutionPolicy Bypass -File "_重建WEB并同步到APP.ps1"，再用 HBuilderX 打开 xingce-app-shell 做「原生App-云打包」。
-4. 验证：安装到 Android 15 模拟器/真机，按 开发说明.md 第 6 节实测矩阵逐项打勾。
+4. 本机 debug APK 分发/真机检验：每次写完代码运行 powershell -ExecutionPolicy Bypass -File "_打包APK分发.ps1"，产物会自动复制到 `APK\行测AI小助手-vX.X.XXX-debug.apk`。
+5. 验证：安装到 Android 15 模拟器/真机，按 开发说明.md 第 6 节实测矩阵逐项打勾。
 
 ## 架构一句话
 

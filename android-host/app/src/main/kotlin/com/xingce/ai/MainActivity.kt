@@ -35,7 +35,7 @@ class MainActivity : Activity() {
         s.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         s.cacheMode = WebSettings.LOAD_DEFAULT
 
-        android.webkit.WebView.setWebContentsDebuggingEnabled(true) // 调试用：adb/chrome devtools 可连
+        if (com.xingce.ai.BuildConfig.DEBUG) android.webkit.WebView.setWebContentsDebuggingEnabled(true) // 仅调试版开调试口；发布版关闭防逆向
         val b = XcBridge(this, web)
         bridge = b
         web.addJavascriptInterface(b, "xcnative")

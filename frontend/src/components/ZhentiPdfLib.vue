@@ -1,10 +1,11 @@
 <script setup>
 // ZhentiPdfLib.vue —— 本地真题PDF卷库 + 内置阅读器（自建原生宿主·SAF 选文件夹；pdfjs 渲染）
+/* global atob, btoa */
 import { ref, onMounted, onUnmounted } from 'vue'
 import { isNativeHost, nativePickFolder } from '../utils/platform'
 import { showToast } from '../utils/toast'
 
-const emit = defineEmits(['close'])
+defineEmits(['close'])
 const tree = ref('')
 const treeName = ref('')
 try { tree.value = localStorage.getItem('xc_pdf_tree') || ''; treeName.value = localStorage.getItem('xc_pdf_tree_name') || '' } catch (e) {}

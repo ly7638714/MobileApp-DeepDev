@@ -109,7 +109,7 @@ function errToast(msg) {
   const now = Date.now()
   if (now - _lastErrToast < 8000) return
   _lastErrToast = now
-  showToast('🔊 朗读失败：' + String(msg || '').slice(0, 80), 'error')
+  try { showToast('🔊 朗读失败：' + String(msg || '').slice(0, 80), 'error') } catch (e) {}
 }
 
 // 朗读：opts={ scene:'lady', rate:1, pitch:null, onEnd: fn, onError: fn }

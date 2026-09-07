@@ -26,20 +26,34 @@ export function trialSlotsText() {
   return String(CFG.slots)
 }
 export function trialExpiresText() {
-  const t = parseExpires()
+  const fromStart = firstRunStart() + TRIAL_DAYS * 24 * 3600 * 1000
+  const abs = parseExpires()
+  const t = Number.isFinite(abs) ? Math.min(fromStart, abs) : fromStart
   if (!Number.isFinite(t)) return CFG.expires || ''
   const d = new Date(t)
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
+const TRIAL_DAYS = 7
+function firstRunStart() {
+  try {
+    const k = 'xc_trial_start_v1'
+    let s = Number(localStorage.getItem(k) || 0)
+    if (!s || isNaN(s)) { s = Date.now(); localStorage.setItem(k, String(s)) }
+    return s
+  } catch (e) { return Date.now() }
+}
 export function trialExpired() {
-  if (!CFG.enabled || !CFG.expires) return false
-  const t = parseExpires()
-  return Number.isFinite(t) && Date.now() > t
+  if (!CFG.enabled) return false
+  const fromStart = firstRunStart() + TRIAL_DAYS * 24 * 3600 * 1000
+  const abs = parseExpires()
+  const limit = Number.isFinite(abs) ? Math.min(fromStart, abs) : fromStart
+  return Date.now() > limit
 }
 export function trialLocked() {
   if (!CFG.enabled) return false
   if (trialExpired()) return true
+  if (!CFG.code) return false // 未配邀请码：首启即放行，试用期由 7 天控制
   try { return localStorage.getItem(LS_KEY) !== '1' } catch (e) { return true }
 }
 export function trialUnlock(code) {

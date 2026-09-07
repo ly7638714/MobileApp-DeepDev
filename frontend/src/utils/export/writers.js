@@ -3,6 +3,7 @@ import { escHtml } from './docx'
 import { showToast } from '../toast'
 import { isNativeHost } from '../platform' // 自建原生宿主(方案乙)：文件导出走 xcnative 公共 Download
 import { exportDone } from '../exportFeedback'
+/* global atob */
 
 // Blob → base64（原生宿主保存二进制文件用）
 function blobToBase64(blob) {

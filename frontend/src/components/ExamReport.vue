@@ -28,12 +28,14 @@ function optLines(qq) {
   return o.map((x) => (typeof x === 'string' ? x : ((x && x.k) ? x.k + '. ' + (x.t != null ? x.t : '') : (x && x.t) || ''))).join('\n')
 }
 async function shotQuestion() {
-  const qs = questions && questions.value
+  const qs = questions.value
+  if (!qs) return showToast('请先选择题号', 'info')
   const qq = qs && qs[shotIdx.value]
   if (!qq) return showToast('请先选择题号', 'info')
   const stem = String(qq.stem || qq.question || qq.q || '').trim()
   const opts = optLines(qq)
-  const m = (marks && marks.value && marks.value[shotIdx.value]) || {}
+  const markList = marks.value
+  const m = (markList && markList[shotIdx.value]) || {}
   const parts = []
   parts.push(stem)
   if (opts) parts.push(opts)
@@ -46,13 +48,15 @@ async function shotQuestion() {
   const no = String(qq.subject || '') ? qq.subject : ''
   const nm = '成绩单第' + (shotIdx.value + 1) + '题_' + new Date().toISOString().slice(0, 10)
   try {
-    await downloadMdScreenshot({ title: (curPaper && curPaper.value && curPaper.value.name) + ' · 第' + (shotIdx.value + 1) + '题', sub: no, md: md || '（本题内容为空）', name: nm })
+    const paper = curPaper.value
+    await downloadMdScreenshot({ title: (paper && paper.name) + ' · 第' + (shotIdx.value + 1) + '题', sub: no, md: md || '（本题内容为空）', name: nm })
   } catch (e) { showToast('截图失败：' + (e && e.message || e), 'error') }
 }
 async function shotReport() {
   const el = shotBox.value
   if (!el) return showToast('尚未生成成绩单', 'info')
-  const nm = (curPaper && curPaper.value && curPaper.value.name) || '成绩单'
+  const paper = curPaper.value
+  const nm = (paper && paper.name) || '成绩单'
   try { await downloadLiveScreenshot(el, { title: '📄 ' + nm + ' · 成绩单', name: '成绩单_' + new Date().toISOString().slice(0, 10) }) }
   catch (e) { showToast('截图失败：' + (e && e.message || e), 'error') }
 }

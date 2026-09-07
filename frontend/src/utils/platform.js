@@ -7,7 +7,7 @@
 //   3. 浏览器/PWA / 非原生环境下所有能力自动降级，绝不抛异常、绝不阻塞。
 // 约定：本文件不依赖 Vue/store；全部函数必须 try/catch 自包含。
 // -----------------------------------------------------------------------------
-/* global plus, navigator, document, window */
+/* global plus, btoa */
 
 // ============ 宿主识别 ============
 export function isPlusHost() {

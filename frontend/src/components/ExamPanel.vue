@@ -8,7 +8,7 @@ import { extractChoices, answerLetter } from '../utils/quiz'
 import { showToast } from '../utils/toast'
 import { exportPaper } from '../utils/export'
 import { renderMd } from '../utils/renderMd'
-import { zhentiIndex, zhentiPaper, zhentiToItems, zhentiTypes } from '../data/zhenti'
+import { zhentiPaper, zhentiToItems } from '../data/zhenti'
 import { allAnchors } from '../data/anchorSet' // 35号批次4-B(2/2)：锚点自测（每板块10道固定真题）
 import { petAnalyzeCurrent } from '../utils/pet'
 import { appendAttempt, buildAttempt, backfillFromQuizCol } from '../utils/attemptLog' // 35号批次1-B 作答事件流
@@ -75,45 +75,6 @@ watch(sheetMode, (v) => { try { localStorage.setItem('xc_sheet_mode', v ? '1' : 
 const singleDir = ref('auto') // 问法方向：auto=随机 / is=选是 / not=选非 / custom=自定义
 const singleLocal = ref(false) // 图推单题：🎲 本地真题生成（零额度、确定性质检）
 if (props.initialLocal) singleLocal.value = true // 离线练习：默认本地生成
-// 📚 真题快练（批次7·真题库）：28卷3583题（网友回忆版），无官方答案→AI判题；收录不全持续补充
-const zhentiIdx = ref(null)
-const zhentiSel = ref('')
-const zhentiPlates = ref([])
-const zhentiLimit = ref(20)
-const zhentiLoading = ref(false)
-const zhentiSecs = ['常识判断', '言语理解', '数量关系', '判断推理', '资料分析']
-watch(srcMode, async (v) => {
-  window.__ztLog = (window.__ztLog || []).concat('watch:' + v)
-  if (v === 'zhenti') {
-    try {
-      zhentiLoading.value = true
-      const idx = await zhentiIndex()
-      zhentiIdx.value = idx
-      window.__ztLog = (window.__ztLog || []).concat('loaded:' + (idx.papers?.length || 0))
-    } catch (e) {
-      window.__ztLog = (window.__ztLog || []).concat('err:' + e.message)
-      showToast('真题索引加载失败: ' + e.message, 'error')
-    }
-    zhentiLoading.value = false
-  }
-})
-function toggleZhentiPlate(p) {
-  zhentiPlates.value = zhentiPlates.value.includes(p) ? zhentiPlates.value.filter(x => x !== p) : zhentiPlates.value.concat(p)
-}
-function startZhenti() {
-  if (!zhentiSel.value) { showToast('请先选择一份真题卷', 'info'); return }
-  zhentiLoading.value = true
-  zhentiPaper(zhentiSel.value).then(async (record) => {
-    const ty = await zhentiTypes().catch(() => null)
-    const items = zhentiToItems(record, zhentiPlates.value, zhentiLimit.value, ty && ty.papers ? ty.papers[record.id] : null)
-    if (!items.length) { showToast('该筛选下无真题，请调整板块', 'info'); return }
-    singleMode.value = false
-    const paper = makePaper('真题快练 · ' + (record.title || record.id), items)
-    papers.value.unshift(paper); savePapers()
-    startPaper(paper)
-    showToast('📚 真题加载完成（' + items.length + '题）· 真题无官方答案，作答后由AI判题', 'info')
-  }).catch((e) => showToast('真题加载失败: ' + e.message, 'error')).finally(() => { zhentiLoading.value = false })
-}
 const tutuFormat = ref('auto') // 图推出题形式：auto=自动轮换 / 一组图 / 两组图 / 九宫格 / 分组分类
 const singleMatType = ref(localStorage.getItem('xc_single_mat_type') || 'auto') // 资料材料类型（记住上次：auto/text/table/mixed/chart）
 watch(singleMatType, (v) => { try { localStorage.setItem('xc_single_mat_type', String(v || '').trim() || 'auto') } catch (e) {} })
@@ -441,7 +402,6 @@ function start() {
   retryInfo.value = null // 用户重新开始出卷/切换到其它入口 → 放弃上一卷的「只补失败题」快照
   // 单题快练：无条件立刻进入「出题等待界面」；Key 缺失在等待界面内明确提示（出题用的是文字模型，勿用视觉模型前置拦截）
   if (srcMode.value === 'single') { startSingle(); return }
-  if (srcMode.value === 'zhenti') { startZhenti(); return }
   if (srcMode.value === 'morning') { startMorning(); return }
   if (srcMode.value === 'weekRedo') { startWeekRedo(); return }
   if (srcMode.value === 'anchor') { startAnchor(); return }
@@ -580,7 +540,7 @@ function pick(k) {
     }
   } else if (autoNext.value && i < questions.value.length - 1) { setTimeout(() => nextQ(), 450) }
 }
-// 📚 真题快练：AI判题（网友回忆版无官方答案）
+// 真题 AI 判题（锚点自测等无官方答案题）
 const zhentiJudgeBusy = {}
 async function judgeZhenti(i, k) {
   const qq = questions.value[i]
@@ -881,7 +841,7 @@ const topTitle = computed(() => {
   if (phase.value === 'gen') return '⏳ AI 出卷中…'
   if (phase.value === 'doing') return '📝 作答中 · ' + (curPaper.value ? curPaper.value.name : '模拟卷')
   if (phase.value === 'result') return '📄 成绩单'
-  return srcMode.value === 'single' ? '⚡ 单题快练' : srcMode.value === 'ai' ? '🎲 AI 整卷出题' : srcMode.value === 'morning' ? '🌅 每日晨练包' : srcMode.value === 'weekRedo' ? '📅 每周重做卷' : srcMode.value === 'import' ? '📂 导入材料' : srcMode.value === 'wrong' ? '📚 错题集组卷' : srcMode.value === 'zhenti' ? '📋 真题快练' : '📐 锚点自测'
+  return srcMode.value === 'single' ? '⚡ 单题快练' : srcMode.value === 'ai' ? '🎲 AI 整卷出题' : srcMode.value === 'morning' ? '🌅 每日晨练包' : srcMode.value === 'weekRedo' ? '📅 每周重做卷' : srcMode.value === 'import' ? '📂 导入材料' : srcMode.value === 'wrong' ? '📚 错题集组卷' : '📐 锚点自测'
 })
 function topBack() {
   if (phase.value === 'doing' || phase.value === 'result' || phase.value === 'preview') backToConfig()
@@ -933,17 +893,17 @@ const examCtx = reactive({
   srcMode, sheetMode, templateId, modules, perQ, fastGenModel, useFigGen, aiCap, genConcur, mixMode,
   paperDir, paperDirText, paperYtN, paperYtNGroup, difficulty, singleGroup, singlePlate, singleVariant,
   singleBatch, singleDir, singleDirText, singleLocal, tutuFormat, singleMatType, autoNext, imgs, textFiles,
-  qLimit, zhentiSel, zhentiPlates, zhentiLimit, wrongSel, wrongLimit, onlyPend, byWrongCount, papers,
-  openPapers, openQuizCol, quizCol, results, openResults, zhentiIdx, selTmpl, tmplJudgeNote, judgeSplitHint,
+  qLimit, wrongSel, wrongLimit, onlyPend, byWrongCount, papers,
+  openPapers, openQuizCol, quizCol, results, openResults, selTmpl, tmplJudgeNote, judgeSplitHint,
   totalQ, refTotal, singlePlates, singleVars, dirLib, avgRate, wrongPlates,
   q, cur, questions, qLeft, qElapsed, marks, modLeft, modTotal, modDone, totalLeft, totalElapsed,
   paperMode, sheetShow, answeredCount, genStatus, qHtml, optHtmls, hasSvgOpts, qExplainHtml, score, rate,
   moduleStats, reviewOpen, prefetchQ, savedWrongFlash, aiLayout, separateAns, curPaper, singleMode, retryInfo,
   // 常量
-  TEMPLATES, SUBJECTS, SIX_GROUPS, zhentiSecs, store,
+  TEMPLATES, SUBJECTS, SIX_GROUPS, store,
   // 方法
   onTemplate, templateTotal, moduleRefSec, rmRow, addRow, saveFastGenModel, saveCfg, onSingleGroup,
-  onSinglePlate, setDirText, toggleZhentiPlate, toggleWrongSel, toggleFold, openPaper, delPaper, startRedo,
+  onSinglePlate, setDirText, toggleWrongSel, toggleFold, openPaper, delPaper, startRedo,
   delQuizCol, clearQuizCol, onFiles, rmImg, rmTxt, fmt, cancel, start, go, retryGen, pick, selfMark, retryGo, retryDismiss, resumePending,
   enhanceExplain, openDesigner, backToConfig, saveWrongs, finish, nextSingle, askFinish,
   prevQ, nextQ, doExportPaper, replay, backList, renderMd, savePaperMode, achieveText

@@ -21,7 +21,7 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
     @JavascriptInterface fun appInfo(): String {
         val ver = try { activity.packageManager.getPackageInfo(activity.packageName, 0) } catch (e: Exception) { null }
         return "{\"versionName\":\"" + (ver?.versionName ?: "") + "\",\"versionCode\":" + (ver?.versionCode ?: 0) + 
-            "\",\"sdk\":" + Build.VERSION.SDK_INT + "\",\"manufacturer\":\"" + Build.MANUFACTURER + "\",\"model\":\"" + Build.MODEL + "\"}"
+            ",\"sdk\":" + Build.VERSION.SDK_INT + ",\"manufacturer\":\"" + Build.MANUFACTURER + "\",\"model\":\"" + Build.MODEL + "\"}"
     }
     @JavascriptInterface fun toast(msg: String) {
         try { android.widget.Toast.makeText(activity, msg, android.widget.Toast.LENGTH_SHORT).show() } catch (e: Exception) {}

@@ -1881,7 +1881,7 @@ onUnmounted(() => {
         <div>账号仅保存在本机浏览器（localStorage），无服务器、不上传任何数据，用于防止他人随意使用你的备考数据。用户名 + 密码登录，勾「记住我」7 天内免登录。清除站点数据或换浏览器会丢失账号（对话/错题/笔记等学习数据不受影响），重新注册即可。忘记密码可点下方「重置本地账号」。</div>
       </details>
       <button class="auth-reset" @click="doAuthReset">🔄 忘记密码？重置本地账号（清空本机账号记录）</button>
-      <div class="auth-foot">💬 六大板块 · 名师方法论 · AI 出题/答疑/朗读 · 三端同步</div>
+      <div class="auth-foot">💬 六大板块 · 名师方法论 · AI 出题/答疑/朗读 · 网页/iPad + 独立手机端</div>
     </div>
   </div>
   <!-- 自定义确认弹窗（账号重置/删除等，替代原生 confirm，PWA/webview 更稳） -->
@@ -3194,7 +3194,7 @@ onUnmounted(() => {
               <p><b>设置面板结构（本次重构）</b>：6 大分组 = 🧠 模型与 AI / 🗣️ 语音朗读 / 🎨 外观与主题 / 💾 数据与同步 / 🎵 趣味与陪伴 / ❓ 帮助与关于。每组一个手风琴标题（`set-group-hd`）+ 内容容器（`set-group-bd`）；顶部 `set-status` 状态总览；导航 `setNav` 按组跳转（`scrollSet` 自动展开所属组）。新增设置项时：①在对应组内添加区块（`sec-t` + 内容 + 可选 `sec-desc`）②在 <code>store.cfg</code> 增加字段 ③必要时加入 <code>SEC_GROUP</code> / <code>SET_GUIDE</code>。</p>
               <p><b>关键配置键（store.cfg）</b>：<code>text/vision</code>=文字/视觉模型（prov/key/url/model）；<code>fig</code>=图形增强；<code>ttsMode/ttsGm/ttsOpenAI/ttsEdgeVoice/ttsRate/ttsOn</code>=朗读；<code>petSkin/skinVoices/skinImgs/customSkins</code>=萌宠；<code>musicOn/musicVol/musicList</code>=音乐；<code>szFrom/szTo</code>=时政范围；<code>dataDir</code>=本地文件夹。</p>
               <p><b>关键存储键（localStorage）</b>：<code>xc_cfg</code>=设置；<code>xc_msgs</code>=对话；<code>xc_wqs</code>=错题；<code>xc_my_mem</code>=记忆库；<code>xc_notes</code>=笔记；<code>xc_pet</code>=萌宠养成；<code>xc_chat_fast_model</code>=对话快模型。</p>
-              <p><b>质量流程</b>：改动后跑 <code>npm run lint</code>（零告警）→ <code>npm test</code> → <code>npm run build</code> → <code>scripts/sync-dist.ps1</code> 三端同步；完整文档见仓库 <code>01_源码/开发说明.md</code>。</p>
+              <p><b>质量流程</b>：网页/iPad 改动后跑 <code>npm run lint</code>（零告警）→ <code>npm test</code> → <code>npm run build</code> → <code>scripts/sync-dist.ps1</code>；手机端在独立仓库 <code>06_MobileApp-DeepDev/frontend</code> 单独维护。</p>
             </div>
           </details>
         </div>

@@ -65,7 +65,7 @@ const {
         <button class="btn btn-gh tb-btn" title="📴 离线练习：无 Key / 断网也能做。图推/数量/政治/资料 用本地确定性生成器（零额度、唯一解质检）出题，随做随批" @click="examOffline = true; openExam('single')">📴 离线练习</button>
         <button class="btn btn-pri tb-btn" title="🌅 每日晨练包：资料速算5 + 常识速测5 + 错题未复盘二刷5，一键15题组合卷" @click="openExam('morning')">🌅 晨练包</button>
         <button class="btn btn-gh tb-btn" title="📐 锚点自测：每板块10道固定真题校准能力值（累计作答100题后解锁）" @click="openAnchor()">📐 锚点自测</button>
-        <button class="btn btn-gh tb-btn" title="🎲 AI 整卷出题：真实卷面结构·自选模块/题量/难度/补短·断点续出·成绩单多格式导出（导入材料/错题组卷/真题快练等在考场配置页内切换）" @click="openExam('ai')">🎲 AI 整卷出题</button>
+        <button class="btn btn-gh tb-btn" title="🎲 AI 整卷出题：真实卷面结构·自选模块/题量/难度/补短·断点续出·成绩单多格式导出（导入材料/错题组卷等在考场配置页内切换）" @click="openExam('ai')">🎲 AI 整卷出题</button>
         <button class="btn btn-gh tb-btn" title="📄 本地真题PDF卷库：选择存有历年真题 PDF 的文件夹(国考/各省)，App 内置阅读器直接翻阅；也可用其它 APP 打开/分享" @click="pdfLibShow = true">📄 真题PDF库</button>
         
         <button class="btn btn-gh tb-btn" @click="train('diag')">📊 学习诊断</button>

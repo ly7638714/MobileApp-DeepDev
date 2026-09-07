@@ -42,14 +42,11 @@ export function exportDone(opt) {
   const row = document.createElement('div')
   row.style.cssText = 'display:flex;gap:8px;margin-top:4px'
   const host = isNativeHost() && window.xcnative
-  let hasAction = false
   if (host && o.uri) {
     row.appendChild(action('📂 用其它APP打开', () => { try { window.xcnative.openUri(o.uri, o.mime || 'application/octet-stream') } catch (e) {} }, 'pri'))
-    hasAction = true
   }
   if (host && o.uri) {
     row.appendChild(action('📤 分享到', () => { try { window.xcnative.shareUri(o.uri, o.mime || 'application/octet-stream', o.name || '') } catch (e) {} }))
-    hasAction = true
   }
   row.appendChild(action('好的', close))
   box.appendChild(row)

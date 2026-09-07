@@ -4,6 +4,16 @@ unpackage/
 .hbuilderx/
 *.log
 node_modules/
+# 本机生成的 APK / 根目录预览产物（源码与壳内 assets 另行入库）
+APK/
+/assets/
+/index.html
+/icon.svg
+/manifest.webmanifest
+/registerSW.js
+/sw.js
+/pdf.worker.min.mjs
+/zhenti/
 # 前端构建产物（源码在 frontend/，产物不入库；壳内 assets 是已构建快照、另行入库）
 dist/
 dist-*
@@ -31,4 +41,3 @@ Thumbs.db
 frontend/public/zhenti-pdf/
 xingce-app-shell/zhenti-pdf/
 frontend/dist/zhenti-pdf/
-

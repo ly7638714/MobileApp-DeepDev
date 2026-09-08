@@ -9,8 +9,8 @@ android {
         applicationId = (project.findProperty("appId") as String?) ?: "com.xingce.ai"
         minSdk = 28
         targetSdk = 35
-        versionCode = 38251
-        versionName = (project.findProperty("verName") as String?) ?: "3.8.251-nh"
+        versionCode = 38252
+        versionName = (project.findProperty("verName") as String?) ?: "3.8.252-nh"
     }
     buildTypes {
         release {

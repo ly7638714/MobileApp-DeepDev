@@ -2,8 +2,8 @@
     "id" : "H5B09ADD1",
     "name" : "行测名师AI小助理",
     "version" : {
-        "name" : "3.8.265",
-        "code" : "38265"
+        "name" : "3.8.266",
+        "code" : "38266"
     },
     "description" : "行测名师AI小助理：个人自用的行测复盘与智能答疑助手。API Key 由用户在手机本地填写。",
     "launch_path" : "index.html",

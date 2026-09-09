@@ -15,6 +15,8 @@ $fe = Join-Path $here 'frontend'
 $dist = Join-Path $fe 'dist'
 $officialAssets = Join-Path $here 'android-host\app\src\main\assets'
 $trialAssets = Join-Path $here 'android-host\app\src\trialAssets'
+$officialWww = Join-Path $officialAssets 'www'
+$trialWww = Join-Path $trialAssets 'www'
 $javaHome = 'E:\DevTools\jdk-21.0.2'
 $androidHome = 'E:\AndroidSdk'
 $gradle = 'E:\DevTools\gradle-8.9\bin\gradle.bat'
@@ -57,7 +59,9 @@ Write-Host '>>> 构建正式版前端 ...' -ForegroundColor Cyan
 Push-Location $fe
 try { & npm.cmd run build; if ($LASTEXITCODE -ne 0) { throw '正式版前端构建失败' } }
 finally { Pop-Location }
-Sync-WebTo $dist $officialAssets
+if (Test-Path $officialAssets) { Remove-Item -LiteralPath $officialAssets -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $officialAssets | Out-Null
+Sync-WebTo $dist $officialWww
 Write-Host '>>> 编译正式版 APK ...' -ForegroundColor Cyan
 & $gradle -p (Join-Path $here 'android-host') :app:assembleDebug --no-daemon "-PassetsDir=src/main/assets" "-PappId=com.xingce.ai" "-PappLabel=行测名师AI小助理" "-PverName=$ver-nh"
 if ($LASTEXITCODE -ne 0) { throw '正式版 APK 编译失败' }
@@ -77,7 +81,9 @@ Write-Host '>>> 构建试用版前端（邀请码门禁） ...' -ForegroundColor
 Push-Location $fe
 try { & npm.cmd run build -- --mode trial; if ($LASTEXITCODE -ne 0) { throw '试用版前端构建失败' } }
 finally { Pop-Location }
-Sync-WebTo $dist $trialAssets
+if (Test-Path $trialAssets) { Remove-Item -LiteralPath $trialAssets -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $trialAssets | Out-Null
+Sync-WebTo $dist $trialWww
 Write-Host '>>> 编译试用版 APK（独立 applicationId） ...' -ForegroundColor Cyan
 & $gradle -p (Join-Path $here 'android-host') :app:assembleDebug --no-daemon "-PassetsDir=src/trialAssets" "-PappId=com.xingce.ai.trial" "-PappLabel=行测名师AI小助理·试用版" "-PverName=$ver-trial"
 if ($LASTEXITCODE -ne 0) { throw '试用版 APK 编译失败' }

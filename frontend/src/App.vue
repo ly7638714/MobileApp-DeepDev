@@ -37,6 +37,7 @@ import { detectNative, nativeWriteFile, nativeBackupPath, startNativeAutoBackup,
 import { musicOn, musicVol, musicLoop, musicIndex, musicList, musicStatus, playTrack, toggleMusic, prevTrack, nextTrack, setVolume, setLoop, addMusicUrl, addMusicFile, removeMusic, importNetEase, pauseAll } from './utils/music'
 import { renderMd } from './utils/renderMd'
 import { pet, petShow, petMuted, bubble, petStats, petStage, petLevel, petHunger, petMood, petPoints, petSpeak, feedPet, patPet, renamePet, setPetMuted, petStop, petReadCurrent, petNextSpeed, petAnalyzeCurrent, petChat, petChatBusy, petSpeakReply, petAsk, petAllSkins, petSkin, applyPetSkin, petImg, setPetImg, clearPetImg, petSkinVoiceOf, petBindCloneVoice, petUnbindCloneVoice, petBoundVoices, petGlobalVoice, savePetGlobalVoice, petCustomData, petIsLocked, petAddCustomSkin, petRemoveCustomSkin, petPersistName, petAskImage, petRenameCloneVoice } from './utils/pet'
+import { petBatchCollectTodayWrong } from './utils/petBatch'
 // 全局 toast 别名：导出/截图等工具里的 window.showToast 都要能弹提示（否则成功失败都无反应）
 try { window.showToast = (m, t) => showToast(m, t) } catch (e) {}
 const petMd = (t) => renderMd(String(t || ''))
@@ -1422,6 +1423,21 @@ function copyFigKey() {
 }
 const petAskText = ref('')
 const skinShow = ref(false)
+const petBatchBusy = ref(false)
+async function doPetTodayBatch() {
+  if (petBatchBusy.value) return
+  petBatchBusy.value = true
+  try {
+    const r = await petBatchCollectTodayWrong()
+    petSpeak(r.msg)
+    showToast(r.count > 0 ? '✅ 已批量加入错题集' : 'ℹ️ 今日暂无截图错题', r.count > 0 ? 'success' : 'info')
+  } catch (e) {
+    petSpeak('今天收错题失败了：' + ((e && e.message) || e))
+    showToast('批量收错题失败：' + ((e && e.message) || e), 'error')
+  } finally {
+    petBatchBusy.value = false
+  }
+}
 function onPetImgFile(ev) {
   const f = ev.target.files && ev.target.files[0]
   ev.target.value = ''
@@ -3824,6 +3840,7 @@ onUnmounted(() => {
           <button class="btn btn-gh pp-act" @click="petNextSpeed()">⏱ {{ Math.round((store.cfg.ttsRate || 1) * 100) }}%</button>
           <button class="btn btn-gh pp-act" @click="doPetAsk('给我安排今天的高效学习计划')">📋 计划</button>
           <button class="btn btn-gh pp-act" @click="doPetAsk('根据我的学习数据，告诉我目前强弱项和下一步建议')">📊 概况</button>
+          <button class="btn btn-gh pp-act" :disabled="petBatchBusy" @click="doPetTodayBatch()">{{ petBatchBusy ? '⏳ 收题中' : '📥 今日截图收错题' }}</button>
           <button class="btn btn-gh pp-act" @click="skinShow = !skinShow">🎭 {{ skinShow ? '收起' : '换装' }}</button>
         </div>
         <div v-if="skinShow" class="pp-skins">

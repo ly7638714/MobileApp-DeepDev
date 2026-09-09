@@ -46,6 +46,24 @@ pwsh -File _打包正式与试用APK.ps1
 
 `.env.trial` 与 APK 都不进 git，避免邀请码泄漏。
 
+## iOS 免费试用入口
+
+iOS 不能像安卓一样直接装 APK，我给体验用户做了免签名的 PWA 入口：
+
+```text
+https://cdn.jsdelivr.net/gh/ly7638714/MobileApp-DeepDev@main/ios-trial/3.8.270/index.html
+```
+
+iOS 用户用 Safari 打开后，点“分享 → 添加到主屏幕”，就能像 App 一样独立打开。邀请码、7 天计时和到期锁定与安卓试用版一致。
+
+重新生成 iOS 试用入口：
+
+```powershell
+pwsh -File _打包iOS试用PWA.ps1
+```
+
+产物提交在 `ios-trial/<版本>/`，每次更新版本后需重新执行并推送 GitHub。
+
 ## 构建脚本
 
 - `_重建WEB并同步到APP.ps1`：把 `frontend/dist` 同步进 HBuilderX 壳。

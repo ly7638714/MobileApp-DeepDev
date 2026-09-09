@@ -1,7 +1,8 @@
 <script setup>
 // R3-③d：配置区子组件（从 ExamPanel.vue 的 config 阶段模板逐字搬入）
 // 父组件通过 ctx 注入全部依赖；模板保持与 ExamPanel 完全一致，仅把状态/方法从 ctx 暴露到本组件作用域。
-import { ref, toRefs, computed } from 'vue'
+import { ref, watch, toRefs, computed } from 'vue'
+import { zhentiTypes } from '../data/zhenti'
 import { EXTRA_VARIANTS } from './examData' // 实测反馈③：自选下拉“更多/创新题型”同源扩展池
 import { readAttempts } from '../utils/attemptLog'
 import { loadPending, clearPending } from '../utils/pendingPaper' // 深化·断点续出：中断组卷草稿横幅 // 35号批次3-B：补短解锁进度
@@ -14,8 +15,8 @@ const {
   srcMode, sheetMode, templateId, modules, perQ, fastGenModel, useFigGen, aiCap, genConcur,
   mixMode, paperDir, paperDirText, paperYtN, paperYtNGroup, difficulty, singleGroup, singlePlate,
   singleVariant, singleBatch, singleDir, singleDirText, singleLocal, tutuFormat, singleMatType,
-  autoNext, imgs, textFiles, qLimit, wrongSel, wrongLimit,
-  onlyPend, byWrongCount, papers, openPapers, openQuizCol, quizCol, results, openResults,
+  autoNext, imgs, textFiles, qLimit, zhentiSel, zhentiPlates, zhentiLimit, wrongSel, wrongLimit,
+  onlyPend, byWrongCount, papers, openPapers, openQuizCol, quizCol, results, openResults, zhentiIdx,
   selTmpl, tmplJudgeNote, judgeSplitHint, totalQ, refTotal, singlePlates, singleVars, dirLib, avgRate, wrongPlates, retryInfo
 } = toRefs(props.ctx)
 
@@ -25,6 +26,7 @@ const EXAM_META = {
   ai: { c: '#5cc8ff', name: '🎲 AI 整卷出题', tag: '按真实卷面结构 AI 智能组卷：模块/题量/难度/补短自选，交卷出成绩单。', pts: ['支持断点续出 / 只补失败题', '可开仿真答题卡模式', '成绩单可导出 Word/PDF/MD/LaTeX/Typst'] },
   import: { c: '#fbbf24', name: '📂 导入材料', tag: '把本地真题/讲义（图片/PDF/Word/txt/tex）识别成可做题。', pts: ['OCR 后先“预览校对”再入库', '可一键存入错题本'] },
   wrong: { c: '#fb7185', name: '📚 错题集组卷', tag: '拿错题本组卷二刷：只看未复盘 / 按错次优先。', pts: ['联动 今日复习中枢 / 补弱任务'] },
+  zhenti: { c: '#a78bfa', name: '📋 真题快练', tag: '真题库（网友回忆版）快速练，AI 判题。', pts: ['支持按年份/板块选题'] },
   morning: { c: '#f97316', name: '🌅 晨练包', tag: '一键 15 题晨练组合卷（资料5 + 常识5 + 错题二刷5）。', pts: ['完成联动看板“晨练”打卡'] },
   weekRedo: { c: '#22d3ee', name: '📅 每周重做', tag: '每周重做卷：把本周到期/复错题按规则再卷一遍。', pts: ['到期与复错优先'] },
   anchor: { c: '#60a5fa', name: '📐 锚点自测', tag: '每板块固定真题锚点，校准能力值（累计作答后解锁）。', pts: ['与 AI 出题同一套题型体系'] }
@@ -33,12 +35,14 @@ const meta = computed(() => EXAM_META[srcMode.value] || EXAM_META.ai)
 
 // 常量 / 方法（函数与数组不被 reactive 解包，保持原引用）
 const {
-  TEMPLATES, SUBJECTS, SIX_GROUPS, store,
+  TEMPLATES, SUBJECTS, SIX_GROUPS, zhentiSecs, store,
   onTemplate, templateTotal, moduleRefSec, rmRow, addRow, saveFastGenModel, saveCfg,
-  onSingleGroup, onSinglePlate, setDirText, toggleWrongSel, toggleFold,
+  onSingleGroup, onSinglePlate, setDirText, toggleZhentiPlate, toggleWrongSel, toggleFold,
   openPaper, delPaper, startRedo, delQuizCol, clearQuizCol, onFiles, rmImg, rmTxt, fmt, cancel, start, retryGo, retryDismiss, resumePending
 } = props.ctx
 
+// 真题题型分布（B4：规则打标 sidecar，零成本）
+const zhentiTy = ref(null)
 // 深化·断点续出：中断组卷草稿（刷新/关闭后仍可恢复）
 const pendingDraft = ref(null)
 function refreshDraft() { try { pendingDraft.value = loadPending() } catch (e) { pendingDraft.value = null } }
@@ -46,6 +50,12 @@ refreshDraft()
 function discardDraft() { try { clearPending() } catch (e) {} refreshDraft() }
 // 实测反馈③：把「不限」轮换池里的扩展/创新题型折叠进自选下拉（optgroup 分组，点选即固定该题型）
 const extraVars = computed(() => { try { const base = Array.isArray(singleVars.value) ? singleVars.value : []; return (EXTRA_VARIANTS[singlePlate.value] || []).filter((x) => !base.includes(x)) } catch (e) { return [] } })
+watch(srcMode, async (v) => {
+  if (v === 'zhenti' && !zhentiTy.value) {
+    zhentiTy.value = await zhentiTypes().catch(() => null)
+  }
+}, { immediate: true })
+
 // 35号批次3-B：🎯 补短模式（薄弱点加权组卷）——冷启动门槛 板块累计作答 ≥30 才可开启（doc 35 §3.2）
 const attemptsN = computed(() => { try { return (readAttempts() || []).length } catch (e) { return 0 } })
 const strengthenUnlock = computed(() => attemptsN.value >= 30)
@@ -64,7 +74,7 @@ function toggleStrengthen(v) {
       <button class="fp-b" :class="{ on: srcMode === 'ai' }" @click="srcMode = 'ai'">🎲 AI 整卷出题</button>
       <button class="fp-b" :class="{ on: srcMode === 'import' }" @click="srcMode = 'import'">📂 导入材料</button>
       <button class="fp-b" :class="{ on: srcMode === 'wrong' }" @click="srcMode = 'wrong'">📚 错题集组卷</button>
-
+      <button class="fp-b" :class="{ on: srcMode === 'zhenti' }" @click="srcMode = 'zhenti'">📋 真题快练</button>
       <button class="fp-b" :class="{ on: srcMode === 'morning' }" @click="srcMode = 'morning'">🌅 晨练包</button>
       <button class="fp-b" :class="{ on: srcMode === 'weekRedo' }" @click="srcMode = 'weekRedo'">📅 每周重做</button>
     </div>
@@ -201,8 +211,8 @@ function toggleStrengthen(v) {
       </div>
       <div class="ep-param">
         <label>出题快模型（提速）</label>
-        <input v-model="fastGenModel" class="pv-edit" style="margin-top: 6px" placeholder="留空=跟随文字模型；填 deepseek-chat 等非思考模型名，出题/预生成用它，比思考模型(v4-flash)快很多（需与文字模型同一服务商/Key）" @change="saveFastGenModel()" />
-        <span class="ep-hint">为什么：v4-flash 是思考模型，每次出题先想一大段再作答；deepseek-chat 直接作答。出题用快的、对话/解析用质量高的。</span>
+        <input v-model="fastGenModel" class="pv-edit" style="margin-top: 6px" placeholder="留空=跟随文字模型；填 deepseek-v4-flash 等非思考模型名，出题/预生成用它提速（需与文字模型同一服务商/Key）" @change="saveFastGenModel()" />
+        <span class="ep-hint">为什么：v4-flash 默认可思考，快答/出题会把 thinking 设为 disabled 走非思考模式，速度更快；DeepSeek 旧名 deepseek-chat/reasoner 已于 2026-07-24 停用。</span>
       </div>
       <div class="ep-param">
         <label><input v-model="useFigGen" type="checkbox" /> 🚀 出题用智谱快模型（图形增强里配置的 GLM）</label>
@@ -430,6 +440,44 @@ function toggleStrengthen(v) {
       </div>
     </div>
 
+    <div v-if="srcMode === 'zhenti'" class="ep-block">
+      <div class="ep-block-hd">📋 真题快练</div>
+      <div class="ep-note">💡 真题库首批：国考2017-2026+贵州卷 <b>28套 {{ zhentiIdx?.papers?.reduce((n, p) => n + p.totalQ, 0) || 3583 }}题</b>（网友回忆版）。<b style="color:var(--hud-amber,#fbbf24)">当前收录不全</b>——省考专项/资料分析图表题等持续补充。真题多数无官方答案，作答后由AI判题并给解析。</div>
+      <div class="ep-param">
+        <label>选择真题卷（{{ zhentiIdx ? (zhentiIdx.papers?.length || 0) + ' 卷' : '加载中…' }}）</label>
+        <select v-model="zhentiSel" class="tb-sel">
+          <option value="">— 选择年份卷 —</option>
+          <option v-for="p in (zhentiIdx?.papers || [])" :key="p.id" :value="p.id">{{ p.title }}（{{ p.totalQ }}题）</option>
+        </select>
+      </div>
+      <div class="ep-param">
+        <label>板块选择（不选 = 全部板块）</label>
+        <div class="ep-chips">
+          <button class="fp-b" :class="{ on: !zhentiPlates.length }" @click="zhentiPlates = []">✅ 全部</button>
+          <button v-for="sp in zhentiSecs" :key="sp" class="fp-b" :class="{ on: zhentiPlates.includes(sp) }" @click="toggleZhentiPlate(sp)">{{ sp }}</button>
+        </div>
+      </div>
+      <div class="ep-param">
+        <label>练习题量</label>
+        <select v-model="zhentiLimit" class="tb-sel">
+          <option :value="0">全部</option>
+          <option :value="10">10 题</option>
+          <option :value="20">20 题</option>
+          <option :value="40">40 题</option>
+        </select>
+      </div>
+      <details class="ep-param" style="margin-top:8px">
+        <summary style="cursor:pointer">🧭 真题题型分布（规则打标 · {{ zhentiTy ? Object.values(zhentiTy.summary).reduce((a, m) => a + Object.values(m).reduce((x, y) => x + y, 0), 0) : '…' }}题）</summary>
+        <div v-if="zhentiTy" style="margin-top:6px">
+          <div v-for="(m, sec) in zhentiTy.summary" :key="sec" style="margin-bottom:6px">
+            <div style="font-size:12px;color:var(--text3);margin-bottom:2px">{{ sec }}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px">
+              <span v-for="(n, t) in m" :key="t" class="zt-dist-it">{{ t }} {{ n }}</span>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
     <div v-if="srcMode === 'wrong'" class="ep-block">
       <div class="ep-block-hd">📚 错题集组卷</div>
       <div class="ep-note">💡 错题复盘卷：从<b>应用内错题本</b>组卷（作答后不会重复入库），可只刷未复盘的、先刷错得多的，做完自动判分。</div>

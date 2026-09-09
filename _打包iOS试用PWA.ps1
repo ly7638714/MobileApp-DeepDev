@@ -1,7 +1,7 @@
 <#
   .synopsis
     把手机端试用前端打包成 iOS 可直接“添加到主屏幕”的 PWA，
-    产物放在仓库 ios-trial/<版本>/ 并由 GitHub jsDelivr 免费分发。
+    产物放在仓库 docs/ios-trial/<版本>/，供 GitHub Pages 免费分发。
   .usage
     pwsh -File "_打包iOS试用PWA.ps1"
 #>
@@ -18,7 +18,8 @@ try {
 
 $m = [regex]::Match((Get-Content -Raw (Join-Path $fe 'src\version.js')), "APP_VERSION\s*=\s*'([^']+)'")
 $ver = if ($m.Success) { $m.Groups[1].Value } else { 'dev' }
-$out = Join-Path $here ("ios-trial\" + $ver)
+$rootOut = Join-Path $here 'docs\ios-trial'
+$out = Join-Path $rootOut $ver
 
 if (Test-Path $out) { Remove-Item -LiteralPath $out -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $out | Out-Null
@@ -36,11 +37,11 @@ if (Test-Path $idx) {
   [IO.File]::WriteAllText($idx, $html, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-$root = Join-Path $here 'ios-trial'
+$root = $rootOut
 New-Item -ItemType File -Force -Path (Join-Path $root '.nojekyll') | Out-Null
 $redirect = Join-Path $root 'index.html'
 $html = '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta http-equiv="refresh" content="0;url=./' + $ver + '/index.html"><meta name="viewport" content="width=device-width, initial-scale=1"><title>行测AI·iOS试用</title></head><body style="background:#0f172a;color:#e2e8f0;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">正在进入 iOS 试用版…</body></html>'
 [IO.File]::WriteAllText($redirect, $html, (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host ('✅ 已生成：' + $out) -ForegroundColor Green
-Write-Host ('   分发入口：https://cdn.jsdelivr.net/gh/ly7638714/MobileApp-DeepDev@main/ios-trial/' + $ver + '/index.html') -ForegroundColor Green
+Write-Host ('   分发入口：https://ly7638714.github.io/MobileApp-DeepDev/ios-trial/' + $ver + '/index.html') -ForegroundColor Green

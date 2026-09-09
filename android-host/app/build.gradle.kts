@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+val appAssetsDir = (project.findProperty("assetsDir") as String?) ?: "src/main/assets"
+val appLabel = (project.findProperty("appLabel") as String?) ?: "行测名师AI小助理"
 android {
     namespace = "com.xingce.ai"
     compileSdk = 35
@@ -9,8 +11,9 @@ android {
         applicationId = (project.findProperty("appId") as String?) ?: "com.xingce.ai"
         minSdk = 28
         targetSdk = 35
-        versionCode = 38269
-        versionName = (project.findProperty("verName") as String?) ?: "3.8.269-nh"
+        versionCode = 38270
+        versionName = (project.findProperty("verName") as String?) ?: "3.8.270-nh"
+        manifestPlaceholders["appLabel"] = appLabel
     }
     buildTypes {
         release {
@@ -28,7 +31,7 @@ android {
     }
     sourceSets {
         getByName("main") {
-            assets.srcDirs("src/main/assets")
+            assets.srcDirs(appAssetsDir)
         }
     }
 }

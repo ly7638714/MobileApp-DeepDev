@@ -51,10 +51,12 @@ pwsh -File _打包正式与试用APK.ps1
 iOS 不能像安卓一样直接装 APK，我给体验用户做了免签名的 PWA 入口：
 
 ```text
-https://ly7638714.github.io/MobileApp-DeepDev/ios-trial/3.8.270/index.html
+https://xingce-ios-trial.pages.dev
 ```
 
 iOS 用户用 Safari 打开后，点“分享 → 添加到主屏幕”，就能像 App 一样独立打开。邀请码、7 天计时和到期锁定与安卓试用版一致。
+
+这个 Pages 项目由 Cloudflare 从 `ios-trial` 分支自动构建，网址里不会出现 GitHub 用户名。
 
 重新生成 iOS 试用入口：
 

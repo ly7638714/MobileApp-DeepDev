@@ -44,4 +44,5 @@ $html = '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta htt
 [IO.File]::WriteAllText($redirect, $html, (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host ('✅ 已生成：' + $out) -ForegroundColor Green
-Write-Host ('   分发入口：https://ly7638714.github.io/MobileApp-DeepDev/ios-trial/' + $ver + '/index.html') -ForegroundColor Green
+Write-Host ('   Cloudflare Pages：https://xingce-ios-trial.pages.dev') -ForegroundColor Green
+Write-Host ('   GitHub Pages 备用：https://ly7638714.github.io/MobileApp-DeepDev/ios-trial/' + $ver + '/index.html') -ForegroundColor Green

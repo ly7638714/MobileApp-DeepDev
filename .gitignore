@@ -14,6 +14,13 @@ APK/
 /sw.js
 /pdf.worker.min.mjs
 /zhenti/
+
+# 本机构建/交接脚本与说明文档（本地保留，不上传 GitHub）
+/_*.ps1
+/_*.md
+/开发说明.md
+# 本地备用 PWA 产物（Cloudflare Pages 由 ios-trial 分支实时构建，不需要入库）
+/docs/ios-trial/
 # 前端构建产物（源码在 frontend/，产物不入库；壳内 assets 是已构建快照、另行入库）
 dist/
 dist-*

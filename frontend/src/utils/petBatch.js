@@ -17,6 +17,22 @@ function cleanImg(img) {
   return String(img || '').startsWith('data:') ? img : ''
 }
 
+function msgText(m) {
+  if (!m) return ''
+  return typeof m.content === 'string' ? m.content : String((m.content && m.content.text) || '')
+}
+
+function explainFrom(reply) {
+  let t = String(reply || '').replace(/<[^>]+>/g, ' ').trim()
+  const i = t.search(/(?:^|\n)\s*(?:【?解析|答案解析|答案详解|讲解)[^。\n]{0,12}[:：]?/i)
+  if (i >= 0) {
+    t = t.slice(i).replace(/^[\s\S]*?[:：]\s*/, '')
+  } else {
+    t = t.replace(/^(?:正确答案|参考答案|正确选项|答案)\s*[:：为是]?\s*[A-D]\s*[。；;,]?\s*/i, '')
+  }
+  return t.slice(0, 1800)
+}
+
 function rawToQuiz(text) {
   const raw = String(text || '').replace(/<[^>]+>/g, ' ').trim()
   if (!raw) return null
@@ -89,7 +105,12 @@ export async function petBatchCollectTodayWrong() {
     const hashKey = (src.q || '').slice(0, 60) + '|' + (img || '').slice(0, 80)
     if (seen.has(hashKey)) continue
     seen.add(hashKey)
-    rounds.push({ src, img, typed: String(u.content && u.content.text || '') })
+    rounds.push({
+      src,
+      img,
+      typed: String(u.content && u.content.text || ''),
+      aiText: aiIdx >= 0 ? msgText(msgs[aiIdx]) : ''
+    })
   }
   if (!rounds.length) {
     return { ok: true, count: 0, total: 0, msg: '🐾 今天还没找到截图/图片错题。先在对话里发几张错题截图，我就能帮你批量收进错题集。' }
@@ -123,15 +144,19 @@ export async function petBatchCollectTodayWrong() {
       continue
     }
     const subject = detectBanKuai(question) || detectBanKuai(r.typed) || '判断推理'
+    const aiAnswer = answerLetter(r.aiText)
+    const answer = qz.answer || aiAnswer
+    const explain = explainFrom(r.aiText)
     const wq = {
       id: Date.now() + '_' + Math.floor(Math.random() * 100000),
       subject,
       question: question || '（截图题目，见原图）',
       imgs: r.img ? [r.img] : [],
-      answer: qz.answer ? '正确答案 ' + qz.answer : '',
+      answer: answer ? '正确答案 ' + answer : '',
       your: '',
       reasons: ['对话中发图提问的错题（萌宠批量整理）'],
-      note: '由今日对话截图批量整理，答案如未识别请复核后补填',
+      explain,
+      note: answer ? '已自动提取对话回复中的正确答案' : '由今日对话截图批量整理，答案如未识别请复核后补填',
       time: new Date().toLocaleString(),
       at: Date.now(),
       wrongCount: 1,

@@ -1,91 +1,29 @@
-# 行测 AI 小助理 · 安卓端
+# 行测名师 AI 小助手（移动端）
 
-这个仓库负责安卓 App 的深度开发与打包。界面仍是 Vue3 前端，但安卓侧不是简单套壳：文件选择、PDF、分享、返回键、剪贴板、状态栏都走原生桥，尽量让前端只关心业务。
+这是“行测名师 AI 小助手”的移动端版本，提供安卓 App 与 iOS 体验入口。
 
-## 目录
+## 主要能力
 
-```text
-frontend/           Vue3 前端源码，和网页端是同一套业务代码
-xingce-app-shell/   HBuilderX 5+App 壳工程（云打包用）
-android-host/       自建原生 WebView 宿主（本地 Gradle 打 debug APK）
-APK/                打包产物，仅本机分发，不进 git
-```
+- 对话答题：文字、图片、语音提问，按行测题型自动匹配方法讲解
+- 智能出题：单题练习、整卷练习、真题组卷、错题巩固
+- 错题复盘：错因归类、二刷、变式、错题导出
+- 学习统计与积累：掌握度、学习时长、常识、时政、成语、实词
+- 数据本地保存，支持备份与同步
 
-正式网页源码在上级目录的 `01_源码/`，那是另一个仓库；前端功能如需两端同步，我会把共有改动分别提交到两个仓库。
+## 体验方式
 
-## 快速开始
+正式版安卓安装包由开发者单独分发，不放在源码仓库内。
 
-```bash
-cd frontend
-npm install
-npm test
-npm run dev
-```
-
-## 两种 APK
-
-开发收尾后统一用一条命令出两个安装包：
-
-```powershell
-pwsh -File _打包正式与试用APK.ps1
-```
-
-产物在 `APK/`：
-
-- `行测AI小助手-v3.8.270-debug.apk`：正式版，包名 `com.xingce.ai`
-- `行测AI小助手-7天试用-v3.8.270-debug.apk`：试用版，包名 `com.xingce.ai.trial`
-
-两个包可以同时装在同一个手机，各自保存各自的数据。
-
-试用版规则：
-
-1. 打开先看到邀请码页。
-2. 邀请码正确后，本机才开始算 7 天。
-3. 到期自动锁定，重新打开只显示“本次体验已结束”。
-4. 邀请码、名额、天数在 `frontend/.env.trial` 里改，模板是 `frontend/.env.trial.example`。
-
-`.env.trial` 与 APK 都不进 git，避免邀请码泄漏。
-
-## iOS 免费试用入口
-
-iOS 不能像安卓一样直接装 APK，我给体验用户做了免签名的 PWA 入口：
+想先体验 7 天试用版，可以在 iOS Safari 中打开：
 
 ```text
 https://xingce-ios-trial.pages.dev
 ```
 
-iOS 用户用 Safari 打开后，点“分享 → 添加到主屏幕”，就能像 App 一样独立打开。邀请码、7 天计时和到期锁定与安卓试用版一致。
+使用 Safari 打开后，点击“分享 → 添加到主屏幕”，即可像 App 一样使用。
 
-这个 Pages 项目由 Cloudflare 从 `ios-trial` 分支自动构建，网址里不会出现 GitHub 用户名。
+试用版需要邀请码，首次输入正确邀请码后开始计时 7 天，到期后自动锁定。
 
-重新生成 iOS 试用入口：
+## 数据说明
 
-```powershell
-pwsh -File _打包iOS试用PWA.ps1
-```
-
-产物提交在 `docs/ios-trial/<版本>/`，每次更新版本后需重新执行并推送 GitHub。
-
-## 构建脚本
-
-- `_重建WEB并同步到APP.ps1`：把 `frontend/dist` 同步进 HBuilderX 壳。
-- `_同步到原生宿主.ps1`：把壳内资源同步进 `android-host` 的 assets。
-- `_打包正式与试用APK.ps1`：先构建正式前端、再构建试用前端，分别打出两个独立包名 APK。
-- `_真题PDF入库.ps1`：把本地真题 PDF 打进 App，供 PDF 卷库离线使用。
-
-本机正式构建需要：
-
-- JDK 21：`E:\DevTools\jdk-21.0.2`
-- Android SDK：`E:\AndroidSdk`
-- Gradle 8.9：`E:\DevTools\gradle-8.9\bin\gradle.bat`
-
-路径都写死在脚本顶部，换了电脑直接改脚本头部即可。
-
-## 不要提交什么
-
-- `frontend/node_modules/`、`frontend/dist/`
-- `android-host/app/src/main/assets/`、`android-host/app/src/trialAssets/`（构建生成）
-- `APK/`、`*.keystore`、`*.jks`、`.env*`（模板除外）
-- HBuilderX 的 `unpackage/`、模拟器截图 `.shots/`
-
-签名证书和 API Key 只存在于本机，我上传仓库前也会再检查一遍是否出现在 diff 里。
+数据默认保存在本机。AI 功能需要用户自行填写对应大模型的 API Key，项目不代为存储密钥。

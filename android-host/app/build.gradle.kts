@@ -11,8 +11,8 @@ android {
         applicationId = (project.findProperty("appId") as String?) ?: "com.xingce.ai"
         minSdk = 28
         targetSdk = 35
-        versionCode = 38273
-        versionName = (project.findProperty("verName") as String?) ?: "3.8.273-nh"
+        versionCode = 38274
+        versionName = (project.findProperty("verName") as String?) ?: "3.8.274-nh"
         manifestPlaceholders["appLabel"] = appLabel
     }
     buildTypes {

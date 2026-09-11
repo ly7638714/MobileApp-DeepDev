@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { symbolsToChinese, cleanSpeechText, smoothWavBytes } from '../utils/ttsEngine'
+import { symbolsToChinese, cleanSpeechText, smoothWavBytes, trimLeadingAudioArtifacts } from '../utils/ttsEngine'
 
 describe('symbolsToChinese 符号智能朗读', () => {
   it('箭头 → 推出', () => {
@@ -30,7 +30,7 @@ describe('symbolsToChinese 符号智能朗读', () => {
   })
 })
 
-describe('smoothWavBytes WAV 平滑（去静音/淡入淡出）', () => {
+describe('smoothWavBytes WAV 平滑（去静音/纯音提示声）', () => {
   function makeWav(totalFrames, amp) {
     const rate = 8000, ch = 1, block = 2
     const dataSize = totalFrames * block
@@ -42,14 +42,19 @@ describe('smoothWavBytes WAV 平滑（去静音/淡入淡出）', () => {
     v.setUint16(22, ch, true); v.setUint32(24, rate, true); v.setUint32(28, rate * block, true)
     v.setUint16(32, block, true); v.setUint16(34, 16, true)
     ws(36, 'data'); v.setUint32(40, dataSize, true)
+    let seed = 123456789
     for (let i = 0; i < totalFrames; i++) {
-      // 语音段用 400Hz 正弦（有过零变化，不是纯 DC）
-      const s = (i < 100 || i >= totalFrames - 100) ? 0 : Math.round(amp * 32767 * Math.sin(2 * Math.PI * 400 * i / rate))
+      // 用变频+幅度起伏+少量噪声模拟语音，避免被纯音检测正确当成提示音
+      seed = (seed * 1103515245 + 12345) >>> 0
+      const rnd = (seed % 2000) / 1000 - 1
+      const env = 0.35 + 0.65 * Math.abs(Math.sin(2 * Math.PI * i / 173))
+      const wave = 0.55 * Math.sin(2 * Math.PI * (260 + (i % 90) * 7) * i / rate) + 0.45 * rnd
+      const s = (i < 100 || i >= totalFrames - 100) ? 0 : Math.round(amp * 32767 * env * wave)
       v.setInt16(44 + i * 2, s, true)
     }
     return ab
   }
-  it('去掉头尾静音并保持合法 WAV', () => {
+  it('保持合法 WAV；疑似误判时不把整段正文剪掉', () => {
     const wav = makeWav(800, 0.5) // 800 frames @8k = 100ms, 前后各100帧静音
     const out = smoothWavBytes(wav)
     const dv = new DataView(out)
@@ -58,13 +63,23 @@ describe('smoothWavBytes WAV 平滑（去静音/淡入淡出）', () => {
     expect(ascii(8, 4)).toBe('WAVE')
     const dataSize = dv.getUint32(40, true)
     const frames = dataSize / 2
-    expect(frames).toBeLessThan(700) // 去掉了前后静音
     expect(frames).toBeGreaterThanOrEqual(500)
-    // 整体能量非零（语音仍在）+ 淡入后前帧能量小于原始幅度（有淡入）
+    // 整体能量非零，且不能因为提示音/静音识别把正文裁成很短的碎片
     let total = 0
     for (let i = 0; i < frames; i++) total += Math.abs(dv.getInt16(44 + i * 2, true))
     expect(total).toBeGreaterThan(0)
-    expect(Math.abs(dv.getInt16(44 + 30 * 2, true))).toBeLessThan(12000)
+    expect(Math.abs(dv.getInt16(44 + 200 * 2, true))).toBeGreaterThan(0)
+  })
+  it('去除每段开头常见的低频短提示音，不再出现“嘟嘟”前导', () => {
+    const wav = makeWav(1800, 0.5)
+    const v = new DataView(wav)
+    for (let i = 0; i < 900; i++) v.setInt16(44 + i * 2, Math.round(0.12 * 32767 * Math.sin(2 * Math.PI * 160 * i / 8000)), true)
+    for (let i = 900; i < 1700; i++) v.setInt16(44 + i * 2, i % 5 === 0 ? Math.round((i % 10 === 0 ? 0.8 : -0.8) * 32767) : 0, true)
+    const out = smoothWavBytes(wav)
+    const ov = new DataView(out)
+    const frames = ov.getUint32(40, true) / 2
+    expect(frames).toBeLessThan(1200)
+    expect(frames).toBeGreaterThan(500)
   })
   it('非 WAV 原样返回', () => {
     const junk = new Uint8Array([1, 2, 3, 4])
@@ -73,5 +88,22 @@ describe('smoothWavBytes WAV 平滑（去静音/淡入淡出）', () => {
   it('过短音频不处理', () => {
     const wav = makeWav(10, 0.5)
     expect(smoothWavBytes(wav)).toBe(wav)
+  })
+})
+
+describe('trimLeadingAudioArtifacts 解码后 PCM 清杂', () => {
+  it('能裁掉开头的短提示音和其后静音，同时保留正文', () => {
+    const sr = 8000
+    const total = sr * 2
+    const data = new Float32Array(total)
+    for (let i = 0; i < sr * 0.12; i++) data[i] = 0.25 * Math.sin(2 * Math.PI * 880 * i / sr)
+    for (let i = sr * 0.14; i < sr * 0.5; i++) data[i] = 0.03 * Math.sin(2 * Math.PI * 260 * i / sr) + 0.015 * Math.sin(2 * Math.PI * 430 * i / sr)
+    const input = { numberOfChannels: 1, length: total, sampleRate: sr, getChannelData: () => data }
+    const ctx = {
+      createBuffer: (ch, len) => ({ numberOfChannels: ch, length: len, sampleRate: sr, _d: [new Float32Array(len)], getChannelData(i) { return this._d[i] } })
+    }
+    const out = trimLeadingAudioArtifacts(ctx, input)
+    expect(out.length).toBeLessThan(total)
+    expect(out.length).toBeGreaterThan(sr)
   })
 })

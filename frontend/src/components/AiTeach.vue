@@ -4,9 +4,11 @@ import { CARDS } from '../kb/cards-index'
 import { chatOnce, activeCfg } from '../api'
 import { renderMd } from '../utils/renderMd'
 import { showToast } from '../utils/toast'
-import { store } from '../store'
+import { store, saveCfg } from '../store'
 import { answerLetter } from '../utils/quiz'
 import { pickGenCfg } from '../utils/fastMode'
+import { buildPlainTranslationPrompt, sanitizePlainTranslation } from '../utils/plainTranslate'
+import { speak, stopSpeak, primeTts, TTS_ENGINES } from '../utils/tts'
 import AiLessonStage from './AiLessonStage.vue'
 
 const props = defineProps({ initialTab: { type: String, default: 'logic' }, initialText: { type: String, default: '' }, initialAnswer: { type: String, default: '' } })
@@ -17,7 +19,6 @@ const logicText = ref(props.initialText || '')
 const logicBusy = ref(false)
 const logicOut = ref('')
 const logicExpectedAnswer = ref(answerLetter(props.initialAnswer || '') || String(props.initialAnswer || '').trim())
-const logicSource = ref(props.initialAnswer ? '错题集原始答案' : '')
 const imageBusy = ref(false)
 const wrongPick = ref('')
 const fileInput = ref(null)
@@ -44,25 +45,109 @@ const playing = ref(false)
 const transcriptOpen = ref(false)
 const checkpointPick = ref('')
 const checkpointOk = ref(false)
-let timer = null
+let playToken = 0
+const LESSON_CACHE_KEY = 'xc_micro_lesson_cache_v1'
+const LESSON_CACHE_VERSION = 1
 const scenes = computed(() => (lesson.value && lesson.value.scenes) || [])
 const currentScene = computed(() => scenes.value[sceneIdx.value] || null)
 const progress = computed(() => (scenes.value.length ? ((sceneIdx.value + 1) / scenes.value.length) * 100 : 0))
 const lessonTitle = computed(() => (lesson.value && lesson.value.title) || '未生成课程')
 
-function stopVoice() { try { if (window.speechSynthesis) window.speechSynthesis.cancel() } catch (e) {} }
-function clearTimer() { if (timer) { clearInterval(timer); timer = null } }
-function speak(text) {
+function stopNarration() { playToken++; try { stopSpeak() } catch (e) {} }
+function sceneNarration(sc) { return sc ? sc.title + '。' + sc.body + (sc.points || []).join('；') : '' }
+function lessonCacheKey(card) {
+  return String((card && (card.id || card.type + '|' + card.plate)) || 'micro')
+}
+function readLessonCache() {
+  try { return JSON.parse(localStorage.getItem(LESSON_CACHE_KEY) || '{}') || {} } catch (e) { return {} }
+}
+function getCachedLesson(card) {
+  const hit = readLessonCache()[lessonCacheKey(card)]
+  if (!hit || hit.v !== LESSON_CACHE_VERSION || !hit.lesson || !Array.isArray(hit.lesson.scenes)) return null
+  return hit.lesson
+}
+function saveLessonCache(card, value) {
   try {
-    if (!window.speechSynthesis || !('SpeechSynthesisUtterance' in window)) return
-    stopVoice()
-    const u = new SpeechSynthesisUtterance(String(text || ''))
-    u.lang = 'zh-CN'
-    u.rate = 0.95
-    window.speechSynthesis.speak(u)
+    const all = readLessonCache()
+    all[lessonCacheKey(card)] = { v: LESSON_CACHE_VERSION, t: Date.now(), lesson: value }
+    const rows = Object.entries(all).sort((a, b) => (b[1].t || 0) - (a[1].t || 0)).slice(0, 30)
+    localStorage.setItem(LESSON_CACHE_KEY, JSON.stringify(Object.fromEntries(rows)))
   } catch (e) {}
 }
-function sceneNarration(sc) { return sc ? sc.title + '。' + sc.body + (sc.points || []).join('；') : '' }
+function ensureCompleteScript(text) {
+  const t = String(text || '').trim()
+  if (!t) return ''
+  return /[。！？…]$/.test(t) ? t : t + '。'
+}
+function localSceneScript(sc, card) {
+  const base = ((sc && sc.body) || '') + ((sc && sc.points && sc.points.length) ? '。' + sc.points.join('；') : '')
+  const points = (sc && sc.points) || []
+  return ensureCompleteScript(
+    '我们先看“' + ((sc && sc.title) || '这一段') + '”。' +
+    base +
+    (points.length > 1 ? '关键要抓住：' + points.slice(0, 3).join('、') + '。' : '') +
+    '把这一步和“' + (card.type || '核心方法') + '”连起来，就能落到做题动作上。'
+  )
+}
+function localLessonScripts(value, card) {
+  return (value.scenes || []).map((sc) => localSceneScript(sc, card))
+}
+function sceneDigest(value) {
+  return (value.scenes || []).map((s, i) => ({
+    i: i + 1,
+    type: s.type || 'flow',
+    title: s.title || '',
+    body: s.body || '',
+    points: s.points || [],
+    example: s.example || null,
+    options: s.options || null,
+    answer: s.answer || '',
+    explain: s.explain || ''
+  }))
+}
+async function buildLessonScripts(value, card) {
+  const scenes = value.scenes || []
+  if (!scenes.length) return []
+  const sys = '你是资深行测名师和讲课稿撰稿人。你的任务不是写提纲，而是为整节动画微课一次性写完整、可直接朗读的教师讲课稿。只输出 JSON，不要 Markdown，不要解释。'
+  const user = '请围绕下面的知识卡和微课场景，一次性生成每一幕的完整教学讲稿。\n' +
+    '知识卡：' + JSON.stringify({ plate: card.plate, type: card.type, signs: card.signs, steps: card.steps, traps: card.traps, tip: card.tip, detail: card.detail, example: card.example }) + '\n' +
+    '场景列表：' + JSON.stringify(sceneDigest(value)) + '\n' +
+    '返回严格 JSON：{"scripts":["第1幕完整讲稿","第2幕完整讲稿",...]}。要求：scripts 数量必须等于场景数，顺序必须一致；每幕写成真正的老师讲课口播稿，先点明要解决的问题，再讲原理、具体动作、容易错在哪里，最后给一句记忆或动作提示；语言干练准确，短句为主，讲师感强，不要机械复述场景标题；例题场景要带学生走一遍判断路径；检查点场景只引导思考和停顿，不提前泄露答案；所有数字、年份、单位、专业词和逻辑关系必须保留；公式和符号要写成中文口语，例如“除以、根号、平方、推出、小于等于”；不能出现 Markdown、表格、代码、URL、舞台提示；绝不能截断，每幕都要完整收束。'
+  const maxTokens = Math.min(7000, Math.max(2600, scenes.length * 420))
+  const reply = await callText([{ role: 'system', content: sys }, { role: 'user', content: user }], maxTokens, 90000)
+  const m = String(reply || '').match(/\{[\s\S]*\}/)
+  const parsed = m ? JSON.parse(m[0]) : null
+  const rows = parsed && Array.isArray(parsed.scripts) ? parsed.scripts : null
+  if (!rows || rows.length !== scenes.length) throw new Error('AI 讲稿不完整')
+  return rows.map((x, i) => ensureCompleteScript(String(x || '').trim() || localSceneScript(scenes[i], card)))
+}
+function lectureScript(sc) {
+  const raw = sceneNarration(sc)
+  if (store.cfg.microScriptOn === false) return raw
+  const idx = scenes.value.indexOf(sc)
+  const hit = lesson.value && lesson.value.scripts && lesson.value.scripts[idx]
+  return hit && String(hit).trim() ? String(hit).trim() : raw
+}
+function waitSpeech(text) {
+  return new Promise((resolve) => {
+    let settled = false
+    let fallback = null
+    const finish = () => {
+      if (settled) return
+      settled = true
+      if (fallback) clearTimeout(fallback)
+      resolve()
+    }
+    const ms = Math.max(15000, Math.min(120000, String(text || '').length * 320))
+    fallback = setTimeout(finish, ms)
+    try {
+      const p = speak(text, { scene: 'teacher', rate: Number(store.cfg.ttsRate) || 1, onEnd: finish, onError: finish })
+      if (p && typeof p.catch === 'function') p.catch(finish)
+    } catch (e) {
+      finish()
+    }
+  })
+}
 async function callText(messages, maxTokens, timeoutMs) {
   const seen = new Set()
   const list = [pickGenCfg(), activeCfg()].filter((c) => {
@@ -82,29 +167,36 @@ async function callText(messages, maxTokens, timeoutMs) {
   }
   throw last || new Error('未配置可用文字模型')
 }
-function playScene() { if (currentScene.value) speak(sceneNarration(currentScene.value)) }
-function play() {
+async function play() {
   if (!scenes.value.length) { showToast('先生成一节微课', 'info'); return }
+  if (playing.value) return
   if (currentScene.value && currentScene.value.type === 'checkpoint' && !checkpointOk.value) { showToast('先完成这个检查点，再继续播放', 'info'); return }
+  primeTts()
   playing.value = true
-  clearTimer()
-  playScene()
-  timer = setInterval(() => {
+  const token = ++playToken
+  while (playing.value && token === playToken) {
     const cur = currentScene.value
-    if (cur && cur.type === 'checkpoint' && !checkpointOk.value) { playing.value = false; clearTimer(); return }
-    if (sceneIdx.value >= scenes.value.length - 1) { playing.value = false; clearTimer(); return }
+    if (!cur) break
+    if (cur.type === 'checkpoint' && !checkpointOk.value) { playing.value = false; break }
+    const text = lectureScript(cur)
+    if (!playing.value || token !== playToken) break
+    await waitSpeech(text)
+    if (!playing.value || token !== playToken) break
+    if (sceneIdx.value >= scenes.value.length - 1) { playing.value = false; break }
     sceneIdx.value++
-    playScene()
-  }, 4200)
+  }
 }
-function pause() { playing.value = false; clearTimer(); stopVoice() }
+function pause() { playing.value = false; playToken++; try { stopSpeak() } catch (e) {} }
 function gotoScene(i) {
   if (i < 0 || i >= scenes.value.length) return
+  const resume = playing.value
+  playing.value = false
+  playToken++
+  try { stopSpeak() } catch (e) {}
   sceneIdx.value = i
   checkpointPick.value = ''
   checkpointOk.value = false
-  stopVoice()
-  if (playing.value) playScene()
+  if (resume) play()
 }
 function prev() { gotoScene(sceneIdx.value - 1) }
 function next() { gotoScene(sceneIdx.value + 1) }
@@ -112,17 +204,25 @@ function checkPoint(k) {
   const sc = currentScene.value
   checkpointPick.value = k
   checkpointOk.value = !!(sc && k === sc.answer)
-  if (checkpointOk.value && playing.value) setTimeout(() => { if (playing.value) next() }, 700)
+  if (checkpointOk.value) {
+    setTimeout(() => {
+      if (sceneIdx.value >= scenes.value.length - 1) return
+      sceneIdx.value++
+      checkpointPick.value = ''
+      checkpointOk.value = false
+      play()
+    }, 700)
+  }
 }
 function selectTopic(t) {
   topic.value = t
-  lesson.value = null
+  lesson.value = getCachedLesson(t.card)
   sceneIdx.value = 0
   playing.value = false
   checkpointPick.value = ''
   checkpointOk.value = false
-  clearTimer()
-  stopVoice()
+  stopNarration()
+  if (lesson.value) showToast('已读取本地缓存的完整微课讲稿', 'info')
 }
 function localLesson(card) {
   const plate = card.plate || '行测'
@@ -156,10 +256,24 @@ async function buildLesson() {
     const reply = await callText([{ role: 'system', content: sys }, { role: 'user', content: user }], 1800, 60000)
     const m = String(reply || '').match(/\{[\s\S]*\}/)
     const parsed = m ? JSON.parse(m[0]) : null
-    lesson.value = parsed && Array.isArray(parsed.scenes) && parsed.scenes.length ? parsed : localLesson(card)
+    const course = parsed && Array.isArray(parsed.scenes) && parsed.scenes.length ? parsed : localLesson(card)
+    let scripts = null
+    try {
+      scripts = await buildLessonScripts(course, card)
+    } catch (e) {
+      scripts = localLessonScripts(course, card)
+      showToast('AI 讲稿未能完整返回，已使用本地完整讲稿兜底', 'info')
+    }
+    course.scripts = scripts
+    lesson.value = course
+    saveLessonCache(card, course)
     if (!parsed) showToast('AI 课程未成稿，已使用本地高质量课程', 'info')
+    else showToast('✅ 完整课程与全套教学讲稿已生成并缓存', 'success')
   } catch (e) {
-    lesson.value = localLesson(card)
+    const fallback = localLesson(card)
+    fallback.scripts = localLessonScripts(fallback, card)
+    lesson.value = fallback
+    saveLessonCache(card, fallback)
     showToast('已使用本地课程，零额度也能完整学习', 'info')
   } finally {
     lessonBusy.value = false
@@ -195,7 +309,6 @@ function pickWrong() {
   if (!q) return
   logicText.value = String(q.question || '')
   logicExpectedAnswer.value = answerLetter(q.answer || '') || String(q.answer || '').trim()
-  logicSource.value = logicExpectedAnswer.value ? '错题集原始答案' : ''
   showToast('已把错题带入翻译，答案字段单独锁定', 'success')
 }
 async function translate() {
@@ -204,14 +317,10 @@ async function translate() {
   logicBusy.value = true
   logicOut.value = ''
   try {
-    const sys = '你是行测逻辑判断名师，只负责把题干和选项翻译成大白话、拆结论论据和选项作用方向。你绝对不能重新判题，也不能推翻或改写用户错题集里已经保存的正确答案。'
-    const locked = logicExpectedAnswer.value ? ('\n\n【系统锁定答案】错题集原始正确选项：' + logicExpectedAnswer.value + '。这是唯一权威答案，禁止改写、禁止重新选择、禁止输出与之冲突的“正确答案”。你只需要解释这个答案为什么成立，以及其他选项为什么不是正确答案。') : '\n\n【系统提示】当前没有锁定答案，你只能翻译结构和选项作用方向，不要替用户下最终答案。'
-    const user = '请帮我彻底读懂这道题：\n\n' + q + locked + '\n\n按下面格式输出：\n① 题干大白话：分别说清“事实是什么”和“最后想证明什么”\n② 论证结构：结论 / 论据 / 隐藏前提，用箭头标出推理方向\n③ 题型判定：削弱/加强/前提/解释/推出/评价\n④ 选项翻译：逐个用一句话翻译它的作用方向\n⑤ 锁定答案核对：如果系统锁定答案，只解释该答案为什么成立；如果未锁定，不输出最终答案'
-    let out = await callText([{ role: 'system', content: sys }, { role: 'user', content: user }], 1400, 60000)
-    if (logicExpectedAnswer.value) {
-      out = String(out || '').replace(/正确答案\s*[:：]?\s*[A-D]/g, '错题集原始答案：' + logicExpectedAnswer.value + '（以错题集为准）')
-    }
-    logicOut.value = out
+    const prompt = buildPlainTranslationPrompt(q, logicExpectedAnswer.value)
+    const out = await callText([{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }], 1400, 60000)
+    const clean = sanitizePlainTranslation(out)
+    logicOut.value = clean || '模型没有返回可用的白话翻译，请重试；本次不会用原解析或答案内容顶替。'
   } catch (e) { logicOut.value = '生成失败：' + e.message } finally { logicBusy.value = false }
 }
 function toggleFullscreen() {
@@ -223,7 +332,7 @@ function toggleFullscreen() {
 }
 function goPractice() { emit('close'); window.dispatchEvent(new CustomEvent('xc-open-exam', { detail: { src: 'single' } })) }
 function goWrong() { emit('close'); store.tab = 'wq' }
-onUnmounted(() => { clearTimer(); stopVoice() })
+onUnmounted(() => { stopNarration() })
 </script>
 
 <template>
@@ -246,9 +355,9 @@ onUnmounted(() => { clearTimer(); stopVoice() })
           <input ref="fileInput" type="file" accept="image/*" style="display:none" @change="recognizeImage" />
           <select v-model="wrongPick" class="tb-sel" @change="pickWrong()"><option value="">📋 从错题集选择</option><option v-for="q in wrongs" :key="q.id" :value="q.id">{{ (q.subject || '错题') + ' · ' + String(q.question || '').slice(0, 34) }}</option></select>
         </div>
-        <div v-if="logicExpectedAnswer" class="at-locked">🔒 {{ logicSource }}：{{ logicExpectedAnswer }} · 翻译只解释该答案，不会重新判题或改写错题集正确答案</div>
-        <textarea v-model="logicText" rows="8" class="pv-edit" placeholder="粘贴逻辑判断题：题干 + 选项，或导入截图/从错题集选择"></textarea>
-        <div class="at-logic-acts"><button class="btn btn-pri" :disabled="logicBusy" @click="translate()">{{ logicBusy ? '⏳ 正在翻译…' : '🧭 开始大白话翻译' }}</button></div>
+        <div v-if="logicExpectedAnswer" class="at-locked">🔒 已带入错题集答案字段，但翻译模式只解释题干概念，不判断、不解释、不改写答案</div>
+        <textarea v-model="logicText" rows="8" class="pv-edit" placeholder="粘贴逻辑判断题：题干 + 选项，或导入截图/从错题集选择。只翻译难懂概念和句意，不复述原解析"></textarea>
+        <div class="at-logic-acts"><button class="btn btn-pri" :disabled="logicBusy" @click="translate()">{{ logicBusy ? '⏳ 正在翻译…' : '🧭 只翻译难懂概念' }}</button></div>
         <div v-if="logicOut" class="at-logic-out" v-html="md(logicOut)"></div>
       </div>
 
@@ -263,8 +372,8 @@ onUnmounted(() => { clearTimer(); stopVoice() })
           <button v-for="t in topics" :key="t.id || t.plate + t.card.type" class="shelf-tab" :class="{ on: topic && topic.id === t.id }" @click="selectTopic(t)">{{ t.plate }} · {{ t.card.type }}<small v-if="t.card.source"> · {{ t.card.source }}</small></button>
         </div>
         <div v-if="topic" class="at-course-head">
-          <div><b>{{ topic.card.type }}</b><span>{{ topic.card.tip }}</span></div>
-          <button class="btn btn-pri" :disabled="lessonBusy" @click="buildLesson()">{{ lessonBusy ? '⏳ AI 导演中…' : '✨ 生成深度微课' }}</button>
+          <div><b>{{ topic.card.type }}</b><span>{{ topic.card.tip }}<template v-if="lesson"> · {{ lesson.scripts && lesson.scripts.length ? '✅ 全套讲稿已缓存' : '⚠️ 未生成讲稿' }}</template></span></div>
+          <button class="btn btn-pri" :disabled="lessonBusy" @click="buildLesson()">{{ lessonBusy ? '⏳ AI 一次性生成课程与讲稿…' : lesson ? '🔄 重新生成课程与讲稿' : '✨ 生成深度微课与讲稿' }}</button>
         </div>
         <template v-if="lesson">
           <div class="at-stage">
@@ -282,7 +391,11 @@ onUnmounted(() => { clearTimer(); stopVoice() })
             <button v-else class="btn btn-gh" @click="pause()">⏸ 暂停</button>
             <button class="btn btn-gh" @click="next()">⏭</button>
             <button class="btn btn-gh" @click="transcriptOpen = !transcriptOpen">{{ transcriptOpen ? '收起字幕' : '显示字幕' }}</button>
-            <span class="at-free">🔊 系统朗读 · 本地动画 · 免费</span>
+            <label class="at-ai-script"><input v-model="store.cfg.microScriptOn" type="checkbox" @change="saveCfg()" /> AI讲课稿</label>
+            <select v-model="store.cfg.ttsMode" class="tb-sel" title="选择微课朗读音色引擎；与对话/萌宠共用全局语音设置" @change="saveCfg()">
+              <option v-for="e in TTS_ENGINES" :key="e.id" :value="e.id">{{ e.name }}</option>
+            </select>
+            <span class="at-free">{{ lesson.scripts && lesson.scripts.length ? '✅ 全套讲稿已缓存 · 语音读完才进入下一幕' : '🔊 语音读完才进入下一幕' }}</span>
           </div>
           <div v-if="transcriptOpen" class="at-transcript"><div v-for="(s, i) in scenes" :key="i" :class="{ cur: i === sceneIdx }" @click="gotoScene(i)"><b>{{ i + 1 }}. {{ s.title }}</b><span>{{ s.body }}</span></div></div>
           <div class="at-actions">
@@ -291,7 +404,7 @@ onUnmounted(() => { clearTimer(); stopVoice() })
             <button class="btn btn-gh" @click="goWrong()">📋 去错题集复练</button>
           </div>
         </template>
-        <div v-else class="at-empty">选一个板块主题，再点「生成深度微课」。课程包含识别、拆解、交互检查、陷阱和实战动作，不是简单 PPT 提纲。</div>
+        <div v-else class="at-empty">选一个板块主题，再点「生成深度微课与讲稿」。系统会一次生成全套教师讲稿并缓存，播放时直接读取，不再逐幕临时生成。</div>
       </div>
     </div>
   </div>
@@ -346,6 +459,7 @@ onUnmounted(() => { clearTimer(); stopVoice() })
 .at-progress { height: 6px; border-radius: 4px; background: rgba(127,127,127,.2); overflow: hidden; margin-top: 14px; }
 .at-progress i { display: block; height: 100%; background: linear-gradient(90deg,#22d3ee,#34d399); transition: width .3s; }
 .at-player { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.at-ai-script { display: inline-flex; align-items: center; gap: 5px; color: var(--text2); font-size: calc(12.5px * var(--ui-fs-scale, 1)); }
 .at-free { color: var(--text3); font-size: calc(12px * var(--ui-fs-scale, 1)); margin-left: auto; }
 .at-check { max-width: 620px; margin: 14px auto 0; display: grid; gap: 8px; text-align: left; }
 .at-check-fb { color: var(--text2); font-size: calc(12.5px * var(--ui-fs-scale, 1)); }

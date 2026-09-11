@@ -67,11 +67,13 @@ export async function slideSynthesize(chunks, worker, onChunk, W = 5) {
 }
 // ============ 统一音频播放器（一次只播一个）============
 let _player = { audio: null, url: '' }
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA=='
 export function stopPlayback() {
-  const p = _player
-  _player = { audio: null, url: '' }
-  if (p.audio) { try { p.audio.pause() } catch (e) {} }
-  if (p.url) { try { URL.revokeObjectURL(p.url) } catch (e) {} }
+  if (_player.audio) {
+    try { _player.audio.onended = null; _player.audio.onerror = null; _player.audio.pause() } catch (e) {}
+  }
+  if (_player.url) { try { URL.revokeObjectURL(_player.url) } catch (e) {} }
+  _player.url = ''
 }
 export function playing() {
   try {
@@ -89,16 +91,32 @@ export function playBytes(bytes, mime) {
       const data = /wav/i.test(mime || '') ? smoothWavBytes(bytes) : bytes
       const blob = new Blob([data], { type: mime || 'audio/mpeg' })
       const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      _player = { audio, url }
+      const audio = _player.audio || (_player.audio = new Audio())
+      _player.url = url
       audio.onended = () => { stopPlayback(); resolve(true) }
       audio.onerror = () => { stopPlayback(); resolve(false) }
+      audio.muted = false
+      audio.src = url
       audio.play().catch(() => { stopPlayback(); resolve(false) })
     } catch (e) {
       stopPlayback()
       resolve(false)
     }
   })
+}
+
+// 用复用的 HTMLAudio 元素播放极短静音，给移动端后续异步生成的 TTS 音频留下播放权限。
+export function primePlayback() {
+  try {
+    const audio = _player.audio || (_player.audio = new Audio())
+    audio.muted = true
+    audio.src = SILENT_WAV
+    const p = audio.play()
+    if (p && typeof p.then === 'function') {
+      p.then(() => { try { audio.pause(); audio.currentTime = 0; audio.muted = false } catch (e) {} })
+        .catch(() => { try { audio.muted = false } catch (e) {} })
+    }
+  } catch (e) {}
 }
 
 // ============ WAV 平滑：正确解析块 + 去开头纯音(嘟嘟)/静音 + 淡入淡出 ============
@@ -155,7 +173,7 @@ export function spSetCallbacks(endCb, errCb) { _sp.endCb = endCb; _sp.errCb = er
 // ============ 无缝流式播放器（Web Audio 精确调度，采样点级无缝，零卡顿）============
 // 旧播放器每个分块单独建 Audio 元素，块间切换有加载/启动空隙 → 感觉卡顿。
 // 这里把每个分块解码成 AudioBuffer，按 ctx.currentTime 时间轴首尾精确衔接播放，像真人说话一样无缝隙。
-let _gap = { ctx: null, started: false, nextAt: 0, queue: [], active: 0, stopping: false, endCb: null, errCb: null, fallback: false, token: 0 }
+let _gap = { ctx: null, started: false, nextAt: 0, queue: [], sources: [], active: 0, stopping: false, endCb: null, errCb: null, fallback: false, token: 0 }
 // 解码串行链：decodeAudioData 是异步的，多个分块若并发解码会乱序完成，
 // 导致「后一块先开播、前一块解码完又叠加上来」（上一句没读完就响下一句）。
 // 用 promise 链把「解码+调度」严格串行化，保证永远按分块顺序无缝衔接。
@@ -212,9 +230,79 @@ async function gapDecode(bytes, mime) {
     if (ctx.state === 'suspended') { try { await ctx.resume() } catch (e) {} }
     if (ctx.state !== 'running') { _gap.fallback = true; return null }
     const data = /wav/i.test(mime || '') ? smoothWavBytes(bytes, { fade: false }) : bytes
-    return await ctx.decodeAudioData(gapBytes(data).slice(0))
+    const decoded = await ctx.decodeAudioData(gapBytes(data).slice(0))
+    return trimLeadingAudioArtifacts(ctx, decoded)
   } catch (e) {
     return null
+  }
+}
+// 统一清理解码后的 PCM：识别分块开头很短的“提示音/点击音 + 静音”，只裁掉疑似非语音前导。
+// 覆盖 MP3/WAV 及所有 TTS 引擎，避免只在 WAV 字节层面处理时漏掉 MP3 的滴滴声。
+export function trimLeadingAudioArtifacts(ctx, input) {
+  if (!ctx || !input || input.numberOfChannels < 1 || input.length < 32) return input
+  try {
+    const sr = input.sampleRate
+    const ch = input.numberOfChannels
+    const total = input.length
+    const scanFrames = Math.min(total, Math.floor(sr * 1.6))
+    const win = Math.max(8, Math.floor(sr * 0.005))
+    const winCount = Math.max(1, Math.floor(scanFrames / win))
+    const stats = []
+    const channel0 = input.getChannelData(0)
+    for (let w = 0; w < winCount; w++) {
+      const s0 = w * win
+      const s1 = Math.min(scanFrames, s0 + win)
+      let sum = 0, peak = 0, zc = 0, maxJump = 0
+      for (let i = s0; i < s1; i++) {
+        const v = channel0[i]
+        const a = Math.abs(v)
+        sum += v * v
+        if (a > peak) peak = a
+        if (i > s0) {
+          const prev = channel0[i - 1]
+          const jump = Math.abs(v - prev)
+          if (jump > maxJump) maxJump = jump
+          if ((prev < 0) !== (v < 0)) zc++
+        }
+      }
+      const n = Math.max(1, s1 - s0)
+      stats.push({ rms: Math.sqrt(sum / n), peak, zcr: zc / n, jump: maxJump / Math.max(1e-6, peak) })
+    }
+    const peakAll = stats.reduce((m, x) => Math.max(m, x.peak), 0)
+    if (peakAll < 0.02) return input
+    const floor = Math.max(0.008, peakAll * 0.035)
+    let firstLoud = -1
+    for (let i = 0; i < stats.length; i++) {
+      if (stats[i].rms > floor && stats[i].peak > floor * 1.6) { firstLoud = i; break }
+    }
+    if (firstLoud < 0 || firstLoud > Math.floor(0.35 / 0.005)) return input
+    let gapStart = -1
+    for (let i = firstLoud + 1; i < stats.length; i++) {
+      if (stats[i].rms <= floor * 0.72 && stats[i].peak <= floor * 1.25) {
+        let gapEnd = i
+        while (gapEnd + 1 < stats.length && stats[gapEnd + 1].rms <= floor * 0.72 && stats[gapEnd + 1].peak <= floor * 1.25) gapEnd++
+        if ((gapEnd - i + 1) * win >= sr * 0.025) { gapStart = i; break }
+      }
+      if (i - firstLoud > Math.floor(0.85 / 0.005)) break
+    }
+    if (gapStart < 0) return input
+    const run = stats.slice(firstLoud, gapStart)
+    const runDuration = run.length * win / sr
+    const avgZcr = run.reduce((s, x) => s + x.zcr, 0) / Math.max(1, run.length)
+    const maxJump = run.reduce((m, x) => Math.max(m, x.jump), 0)
+    const shortArtifact = runDuration <= 0.55
+    const tonal = avgZcr < 0.022 || avgZcr > 0.055
+    const clicky = maxJump > 1.25 || run.some((x) => x.peak > 0.42)
+    if (!(shortArtifact && (tonal || clicky || runDuration <= 0.13))) return input
+    let trim = (gapStart * win)
+    while (trim < scanFrames && Math.abs(channel0[trim] || 0) > floor * 1.4) trim++
+    trim = Math.min(trim + Math.floor(sr * 0.006), Math.floor(sr * 1.35))
+    if (trim < Math.floor(sr * 0.012) || total - trim < Math.floor(sr * 0.02)) return input
+    const out = ctx.createBuffer(ch, total - trim, sr)
+    for (let c = 0; c < ch; c++) out.getChannelData(c).set(input.getChannelData(c).subarray(trim))
+    return out
+  } catch (e) {
+    return input
   }
 }
 // 调度（串行）：按 AudioContext 时间轴首尾精确衔接，像真人说话一样无缝隙
@@ -235,18 +323,21 @@ function gapStart(audioBuf, meta) {
     const gain = ctx.createGain()
     src.connect(gain)
     gain.connect(ctx.destination)
+    _gap.sources.push(src)
     const start = _gap.nextAt
     const end = start + audioBuf.duration
-    const fade = 0.006
-    // 块首/块尾做 6ms 极短淡入淡出：既不会让上下句断出“滴”，又不会形成可感知停顿
-    gain.gain.setValueAtTime(0.0001, start)
+    // 每个分块只做约 8ms 微淡化，消除“每句开头一声嘟”的硬切爆音；足够短，不会听成忽大忽小。
+    const fade = Math.min(0.012, Math.max(0.004, audioBuf.duration / 6))
+    gain.gain.setValueAtTime(0, start)
     gain.gain.linearRampToValueAtTime(1, start + fade)
     gain.gain.setValueAtTime(1, Math.max(start + fade, end - fade))
-    gain.gain.linearRampToValueAtTime(0.0001, end)
-    src.start(start, 0, audioBuf.duration + 0.002)
+    gain.gain.linearRampToValueAtTime(0, end)
+    src.start(start, 0, audioBuf.duration)
     const tailPause = (meta && meta.text ? speechPauseMs(meta.text) : 18) / 1000
     _gap.nextAt = end + tailPause
     src.onended = () => {
+      const si = _gap.sources.indexOf(src)
+      if (si >= 0) _gap.sources.splice(si, 1)
       _gap.active--
       if (_gap.active <= 0) _gap.queue = []
       if (_gap.active <= 0 && _gap.endCb && !_gap.stopping) {
@@ -262,8 +353,12 @@ export function gaplessStop() {
   _gap.token++
   _gapChain = Promise.resolve()
   _gap.stopping = true
-  try { if (_gap.ctx) _gap.ctx.close().catch(() => {}) } catch (e) {}
-  _gap.ctx = null
+  // 只停掉旧音源，保留已经由用户手势解锁的 AudioContext；移动端下一句才能在异步生成讲稿后继续出声。
+  for (const src of _gap.sources) {
+    try { src.stop() } catch (e) {}
+    try { src.disconnect() } catch (e) {}
+  }
+  _gap.sources = []
   _gap.started = false
   _gap.nextAt = 0
   _gap.queue = []
@@ -1066,12 +1161,12 @@ export async function speakPro(text, opts = {}) {
   try {
     if (mode === 'openai') {
       // 流式：分块边到边播，第一块一到就开口
-      const r = await openaiSynthesize(t, { voice: opts.voice, speed: opts.speed, chunkSize: 140, firstChunkSize: 26, onChunk: (buf, text) => enqueueGapless(buf, text, 'audio/mpeg') })
+      const r = await openaiSynthesize(t, { voice: opts.voice, speed: opts.speed, chunkSize: 240, firstChunkSize: 42, onChunk: (buf, text) => enqueueGapless(buf, text, 'audio/mpeg') })
       return await streamFinish(r, opts)
     }
     if (mode === 'dash') {
       // 阿里百炼 Qwen3-TTS：同流式分块，第一块一到就开口（mpeg）
-      const r = await dashSynthesize(t, { voice: opts.voice, speed: opts.speed, chunkSize: 140, firstChunkSize: 26, onChunk: (buf, text) => enqueueGapless(buf, text, 'audio/mpeg') })
+      const r = await dashSynthesize(t, { voice: opts.voice, speed: opts.speed, chunkSize: 240, firstChunkSize: 42, onChunk: (buf, text) => enqueueGapless(buf, text, 'audio/mpeg') })
       return await streamFinish(r, opts)
     }
     if (mode === 'edge') {
@@ -1094,7 +1189,7 @@ export async function speakPro(text, opts = {}) {
       return { ok }
     }
     // 默认 glm：流式分块播放；失败自动回退系统语音，保证「一定读得出来」
-    const r = await glmSynthesize(t, { voice: opts.voice, speed: opts.speed, chunkSize: 140, firstChunkSize: 26, onChunk: (buf, text) => enqueueGapless(buf, text, 'audio/wav') })
+    const r = await glmSynthesize(t, { voice: opts.voice, speed: opts.speed, chunkSize: 240, firstChunkSize: 42, onChunk: (buf, text) => enqueueGapless(buf, text, 'audio/wav') })
     if (r.ok) return await streamFinish(r, opts)
     setStatus('error', '❌ ' + r.msg)
     if (opts.onError) opts.onError(r.msg)

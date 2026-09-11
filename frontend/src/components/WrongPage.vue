@@ -16,7 +16,7 @@ import { scheduleAfter } from '../utils/reviewSchedule' // R1/R2 复习调度与
 import { questionMastery } from '../utils/mastery' // R3 evidence-based 单题掌握度
 import { absorbState } from '../utils/wrongAbsorb' // 错题吸收度闭环
 import { reasonProfile, wqsOfReason } from '../utils/reasonProfile' // R4 错因画像
-import { canonicalSubOf, canonicalGroupOf, typeLabelOf, isRealSub, CANON_TYPE_ORDER } from '../utils/wrongTaxonomy' // v3.8.207 板块→细分→题型归一
+import { canonicalSubOf, canonicalGroupOf, typeLabelOf, isRealSub, CANON_TYPE_ORDER, sameWrongTaxon, typeOrderOfSub } from '../utils/wrongTaxonomy' // v3.8.207 板块→细分→题型归一
 import { genTutuQuestion } from '../utils/tutuGen' // 图推缺失图形时的本地确定性重建
 import { BATCH_MAX, batchReviewSys, batchReviewUser, parseBatchText, batchReviewMd } from '../utils/batchReview' // AI 批量复盘
 import { weakCandidates } from '../utils/weakTask' // 补弱任务（答错>=3同类自动进今日目标）
@@ -27,6 +27,7 @@ const md = (t) => renderMd(t || '')
 import { ankiAddNote } from '../utils/ankiConnect'
 import { addPoints as petAddPoints, buildWrongAnalysis, petAnalyzeCurrent, petFastCfg } from '../utils/pet'
 import { GENERIC_REASONS, SUBJ_REASONS } from '../data/wrongReasons'
+import { parseCoachAiReply } from '../utils/wrongReasonCoach'
 
 import WrongVault from './WrongVault.vue'
 import WrongList from './WrongList.vue'
@@ -42,10 +43,13 @@ import WrongRecall from './WrongRecall.vue' // 主动回忆式复盘弹层（深
 const cur = ref(-1),
   show = ref(false)
 const rep = ref(false)
-const frm = ref({ answer: '', method: '', note: '', sel: [] })
+const frm = ref({ answer: '', method: '', note: '', analysis: '', sel: [] })
 const editQShow = ref(false)
 const editQText = ref('')
 const editQAnswer = ref('')
+const editQGroup = ref('')
+const editQSub = ref('')
+const editQType = ref('')
 // ===== 卷库：全部历史卷子 + 出题集（查看/重做/导出/删除） =====
 const vaultOpen = ref(false)
 const qcPapers = ref([])
@@ -148,12 +152,32 @@ const stats = computed(() => {
 // ===== 板块→细分→题型 归一（v3.8.207）=====
 // 细分板块 = 真细分（图推/定义/类比/逻辑/片段/篇章/数量/资料/常识/政治）；
 // 组名“判断推理/言语理解”不再作为细分出现，历史 subject=判断推理 的题按正文/题型归到 逻辑判断 等。
+function wrongGroupOf(q) {
+  try { return canonicalGroupOf(q) } catch (e) { return '未分类' }
+}
 function wrongSubOf(q) {
   try { return canonicalSubOf(q) } catch (e) { return String((q && (q.subject || q.plate)) || '') || '未分类' }
 }
 // 题型 = canonical 名称（优先存值 q.sub/q.variant，其次按正确板块词表识别正文）；识别不到归 未分类
 function wrongTypeOf(q) {
   try { return typeLabelOf(q) } catch (e) { return '未分类' }
+}
+const editSubOptions = computed(() => {
+  const g = WRONG_GROUPS.find((x) => x.label === editQGroup.value)
+  return (g && g.subs) || []
+})
+const editGroupOptions = computed(() => WRONG_GROUPS.map((g) => g.label))
+const editTypeOptions = computed(() => {
+  const sub = editQSub.value || editQGroup.value
+  return sub ? typeOrderOfSub(sub) : CANON_TYPE_ORDER.slice()
+})
+function onEditGroupChange() {
+  const subs = editSubOptions.value
+  editQSub.value = subs.length === 1 ? subs[0] : ''
+  editQType.value = ''
+}
+function onEditSubChange() {
+  if (editQType.value && !editTypeOptions.value.includes(editQType.value)) editQType.value = ''
 }
 // 聚合（v3.8.207 归一）：先归 六大板块组 → 细分板块 → canonical 题型 再统计；
 // 输出 plates=[{plate(组),total,subs:[{sub(细分),name(题型),count,pct,t}]}]，杜绝“判断推理/逻辑判断”双行分裂
@@ -662,7 +686,7 @@ function openRaw(idx) {
   show.value = true
   rep.value = false
   const q = store.wqs[idx] || {}
-  frm.value = { answer: q.answer || '', method: q.method || '', note: q.note || '', sel: (q.reasons || []).slice() }
+  frm.value = { answer: q.answer || '', method: q.method || '', note: q.note || '', analysis: q.analysis || '', sel: (q.reasons || []).slice() }
   store.curWrongIdx = idx
   store.curQ = { plate: q.plate || q.subject, subject: q.subject || q.plate, kind: q.kind || q.variant || '', stem: q.q || q.stem || q.text, options: q.options || [], answer: q.answer || q.ans || q.correct || '', explain: q.explain || q.analysis || '', your: q.your || q.answerUser || '', ok: false }
   store.readCtx = { type: 'wrong', title: '错题复盘·' + (q.plate || q.subject || '行测'), text: buildWrongReadable(q) }
@@ -719,6 +743,16 @@ function persistReasons() {
     localStorage.setItem('xc_wq_reasons', JSON.stringify(userReasons.value))
   } catch (e) {}
 }
+function rememberReasons(list) {
+  let changed = false
+  ;(Array.isArray(list) ? list : []).forEach((raw) => {
+    const r = String(raw || '').trim()
+    if (!r || userReasons.value.includes(r)) return
+    userReasons.value.push(r)
+    changed = true
+  })
+  if (changed) persistReasons()
+}
 // 当前错题板块可选的错因：预设候选 + 已勾选 + 收纳盒（历史积累）
 const reasonBoxOpen = ref(false)
 const presetReasons = computed(() => {
@@ -767,9 +801,9 @@ async function aiPolishReason() {
     try { arr = JSON.parse(String(reply || '').trim()) } catch (e) { const m = String(reply || '').match(/\[[\s\S]*\]/); if (m) { try { arr = JSON.parse(m[0]) } catch (_) {} } }
     const list = Array.isArray(arr) ? arr.map((x) => String(x).trim()).filter(Boolean) : []
     if (!list.length) { showToast('规范化失败：' + String(reply || '').slice(0, 60), 'error'); return }
+    rememberReasons(list)
     list.forEach((v) => {
       if (!frm.value.sel.includes(v)) frm.value.sel.push(v)
-      if (!userReasons.value.includes(v)) { userReasons.value.push(v); persistReasons() }
     })
     customReason.value = ''
     showToast('✨ 已规范化并加入错因：' + list.join('；'), 'success')
@@ -785,10 +819,7 @@ function addCustomReason() {
     showToast('请输入错因内容', 'info')
     return
   }
-  if (!userReasons.value.includes(r)) {
-    userReasons.value.push(r)
-    persistReasons()
-  }
+  rememberReasons([r])
   if (!frm.value.sel.includes(r)) frm.value.sel.push(r)
   customReason.value = ''
 }
@@ -802,9 +833,10 @@ const reviewGaps = computed(() => {
   if (!(f.sel || []).length) gaps.push('错因')
   if (!String(f.method || '').trim()) gaps.push('秒杀规律')
   if (!String(f.note || '').trim()) gaps.push('笔记')
+  if (!String(f.analysis || '').trim()) gaps.push('解析拆解')
   return gaps
 })
-// ② 同类错题联动：同板块且共享任一错因的其他错题，一键连看吃透
+// ② 同类错题联动：必须同时满足“大板块 + 细分板块 + 题型”完全一致，错因只用于排序，不能代替分类。
 const relatedQs = computed(() => {
   if (cur.value < 0) return []
   const q = store.wqs[cur.value]
@@ -812,7 +844,7 @@ const relatedQs = computed(() => {
   const mine = (q.reasons || []).filter(Boolean)
   return store.wqs
     .map((x, i) => ({ x, i, share: mine.filter((r) => (x.reasons || []).includes(r)).length }))
-    .filter(({ x, i }) => i !== cur.value && canonicalGroupOf(x) === canonicalGroupOf(q)) // v3.8.208 按 canonical 组判同类（避免 判断推理/逻辑判断 分裂）
+    .filter(({ x, i }) => i !== cur.value && sameWrongTaxon(x, q))
     .sort((a, b) => b.share - a.share)
     .slice(0, 6)
 })
@@ -1186,20 +1218,27 @@ const paperView = computed(() => {
 function save() {
   if (cur.value < 0) return
   const q = store.wqs[cur.value]
+  const wasReviewed = !!q.reviewed
   q.answer = frm.value.answer.trim()
   q.method = frm.value.method.trim()
   q.note = frm.value.note.trim()
+  q.analysis = String(frm.value.analysis || '').trim()
   q.reasons = frm.value.sel
-  q.reviewed = !!(q.answer || q.method || q.note)
+  q.reviewed = !!(q.answer || q.method || q.note || q.analysis || q.reasons.length)
   q.reviewedAt = Date.now()
   saveWqs()
-  if (q.reviewed) petAddPoints(5) // 批次8·萌宠成长绑定：完成复盘+5成长值
-  showToast('✅ 已保存复盘' + (q.reviewed ? '（萌宠 +5 成长）' : ''), 'success')
+  const firstReview = q.reviewed && !wasReviewed
+  if (firstReview) petAddPoints(5) // 批次8·萌宠成长绑定：首次完成复盘 +5 成长值
+  showToast('✅ 已保存复盘' + (firstReview ? '（萌宠 +5 成长）' : ''), 'success')
 }
 function openEditQ() {
   if (cur.value < 0 || !store.wqs[cur.value]) return
-  editQText.value = String(store.wqs[cur.value].question || store.wqs[cur.value].q || store.wqs[cur.value].stem || '')
-  editQAnswer.value = String(store.wqs[cur.value].answer || '')
+  const q = store.wqs[cur.value]
+  editQText.value = String(q.question || q.q || q.stem || '')
+  editQAnswer.value = String(q.answer || '')
+  editQGroup.value = wrongGroupOf(q)
+  editQSub.value = wrongSubOf(q)
+  editQType.value = wrongTypeOf(q) === '未分类' ? '' : wrongTypeOf(q)
   editQShow.value = true
 }
 function saveEditQ() {
@@ -1207,9 +1246,15 @@ function saveEditQ() {
   const q = store.wqs[cur.value]
   q.question = editQText.value.trim()
   q.answer = editQAnswer.value.trim()
+  const sub = editQSub.value || editQGroup.value
+  q.subject = sub || editQGroup.value || '未分类'
+  q.plate = q.subject
+  q.subx = isRealSub(sub) ? sub : ''
+  q.sub = editQType.value || ''
+  q.variant = editQType.value || ''
   saveWqs()
   editQShow.value = false
-  showToast('✅ 错题题目与答案已保存', 'success')
+  showToast('✅ 错题题目、答案与分类已保存', 'success')
 }
 function del() {
   if (cur.value < 0) return
@@ -1333,16 +1378,22 @@ async function askAiReasons() {
       }
     }
     const rc = q.reasonCoach || {}
-    const sys = `你是错因整理员。只能使用考生自己完成三步引导后写下的观察、卡点和下次动作来整理错因；不得新增考生没有表达过的原因，不得替考生编造心理活动，不得给泛泛而谈的“审题不清/粗心”。请把考生的原话整理成具体、可执行、能指导下一次避免的错因。`
+    const sys = `你是行测错题复盘教练。你只能使用考生自己完成分步引导后写下的观察、卡点和下次动作来整理，不得新增考生没有表达过的原因，不得替考生编造心理活动，不得写泛泛而谈的“审题不清/粗心”。请把用户原话整理成具体、可执行、能指导下一次避免的错因，并继续帮助他写出可迁移规律、个人复盘笔记和本题解析拆解。`
     const myAnswer = String(q.your || q.answerUser || '').trim()
     const rightAns = String(q.answer || q.ans || q.correct || '').trim()
     const analysis = String(q.explain || q.analysis || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 700)
-    const userContent = `我在复盘一道错题，请你帮我引导归纳错误原因，并**按以下 JSON 输出**（严格只输出 JSON，不要多余文字）：
+    const userContent = `我在复盘一道错题，请基于我的作答、正确答案和分步引导原话，**严格只输出 JSON**（不要 Markdown 围栏、不要多余文字）：
 {
   "answer": "如果题干能看出正确答案就填（如 D、主旨句等），看不出填空字符串",
   "reasons": ["错因1", "错因2"],  // 结合我的作答与正确答案，最多3条，每条具体到"错在哪一步/哪个点"，能直接指导我下次避免
-  "method": "一句话秒杀/下次看到这类题先想什么",
-  "note": "简要的解析与下次提醒"
+  "pattern": "一句话可迁移规律/下次看到这类题先想什么",
+  "note": "以第一人称写的简短个人复盘笔记，提醒我不要再犯同一个判断错误",
+  "analysis": "解析拆解：正确答案为什么成立、我错在哪一步、干扰项如何设置，150-300字",
+  "guide": {
+    "pattern": ["帮助我自己写出规律的两个追问"],
+    "note": ["帮助我自己写个人笔记的两个追问"],
+    "analysis": ["帮助我自己补全解析的两个追问"]
+  }
 }
 板块：${q.subject || '未分类'}
 我的提问：${ctx.text || ''}
@@ -1360,30 +1411,11 @@ AI 当时的解答：${aiReply || '（无）'}
     } else {
       messages = [{ role: 'user', content: (sys + '\n' + userContent) + (rawImgs.length ? '\n（提示：我未提供原图，请基于题干文字判断，并提醒我如需更精准可重新存错题）' : '') }]
     }
-    const reply = await chatOnce(c, messages, 900, 45000)
-    // 解析结构化结果：先整体 parse，失败则抠出第一个 {...} JSON 对象
-    let obj = null
-    if (reply) {
-      function tryParse(s) {
-        try {
-          return JSON.parse(s.trim())
-        } catch (e) {
-          return null
-        }
-      }
-      obj = tryParse(reply.replace(/```json|```/g, ''))
-      if (!obj) {
-        const m = reply.match(/\{[\s\S]*\}/)
-        if (m) obj = tryParse(m[0])
-      }
-      if (!obj) {
-        // 最后兜底：逐字段从文本提取
-        obj = parseByField(reply)
-      }
-    }
+    const reply = await chatOnce(c, messages, 1400, 60000)
+    const obj = parseCoachAiReply(reply) || parseByField(reply)
     if (obj) {
-      applyAiReasons(q, obj, () => fillAnswerMethodNote(q, obj))
-      showToast('已智能填入：答案/错因/秒杀/笔记' + (reasonModal.value ? '（错因待你确认）' : ''), 'success')
+      applyCoachReview(q, obj, { autoSave: true, source: 'ai' })
+      showToast('✅ AI 已完成：错因 · 规律 · 个人笔记 · 解析拆解', 'success')
     } else if (reply) {
       frm.value.note = (frm.value.note ? frm.value.note + '\n\n' : '') + '🤖 小助手引导（可编辑）：\n' + reply
       showToast('已写入复盘笔记', 'success')
@@ -1396,59 +1428,55 @@ AI 当时的解答：${aiReply || '（无）'}
     aiBusy.value = false
   }
 }
-// 智能分字段回填
-// 应用 AI 返回的 reasons：若当前题已有旧错因且有新错因，先弹窗询问用户「替换 / 合并 / 取消」
-// v3.8.206 修复跨题串扰：① AI 错因只归属发起时的本题，不再写入全局「我的历史错因」池
-// （杜绝 A 题的 AI 错因出现在 B 题收纳盒、无限累积）；② 以发起时的题目 q 为目标——若 AI
-// 返回前用户已切到别的题，则把结果写入原题本身并保存，绝不污染当前打开题目的编辑框。
-function applyAiReasons(q, o, fillOthers) {
-  if (!q) return
-  const onQ = () => cur.value >= 0 && store.wqs[cur.value] === q
-  const newReasons = Array.isArray(o.reasons)
-    ? o.reasons.map((r) => String(r || '').trim()).filter(Boolean).slice(0, 3)
-    : []
-  const oldReasons = onQ() ? frm.value.sel.slice() : (Array.isArray(q.reasons) ? q.reasons.slice() : [])
-  const commit = (selArr) => {
-    if (onQ()) {
-      frm.value.sel = selArr
-    } else {
-      q.reasons = selArr
-      q.reviewed = true
-      q.reviewedAt = Date.now()
-      saveWqs()
-      showToast('✅ AI 错因已填回原题（期间你切到了别的题，未改动当前题）', 'success')
-    }
-  }
-  if (oldReasons.length && newReasons.length) {
-    reasonModal.value = {
-      mode: 'reasons', old: oldReasons, neu: newReasons,
-      resolve: (mode) => {
-        if (mode === 'replace') commit(newReasons.slice())
-        else if (mode === 'merge') commit([...oldReasons, ...newReasons.filter((r) => !oldReasons.includes(r))])
-        // cancel → 不改错因
-        reasonModal.value = null
-      }
-    }
-  } else if (newReasons.length) {
-    commit([...oldReasons, ...newReasons.filter((r) => !oldReasons.includes(r))])
-  }
-  if (fillOthers) fillOthers()
+function appendCoachField(current, next, label = '') {
+  const value = String(next || '').trim()
+  if (!value) return String(current || '')
+  const old = String(current || '').trim()
+  if (!old) return value
+  if (old.includes(value)) return old
+  return old + '\n\n' + (label ? label + '\n' : '') + value
 }
-// 只回填 answer/method/note（错因走 applyAiReasons 的询问流程）
-// v3.8.206：以目标题 q 为准——仍停留在该题则写编辑框；已切换则直接写原题并保存，防止串题
-function fillAnswerMethodNote(q, o) {
-  if (!q) return
-  if (cur.value >= 0 && store.wqs[cur.value] === q) {
+// 分步复盘与 AI 深挖统一落库：错因自动加入本题和自定义错因池，规律/笔记/解析自动写回复盘区。
+function applyCoachReview(q, o, opts = {}) {
+  if (!q || !o) return false
+  const onQ = () => cur.value >= 0 && store.wqs[cur.value] === q
+  const reasons = Array.isArray(o.reasons) ? o.reasons.map((r) => String(r || '').trim()).filter(Boolean).slice(0, 3) : []
+  const currentReasons = onQ() ? frm.value.sel.slice() : (Array.isArray(q.reasons) ? q.reasons.slice() : [])
+  const mergedReasons = [...currentReasons, ...reasons.filter((r) => !currentReasons.includes(r))]
+  if (reasons.length) rememberReasons(reasons)
+  if (onQ()) {
+    frm.value.sel = mergedReasons
     if (o.answer && !frm.value.answer) frm.value.answer = String(o.answer)
-    if (o.method && !frm.value.method) frm.value.method = String(o.method)
-    if (o.note) frm.value.note = (frm.value.note ? frm.value.note + '\n\n' : '') + String(o.note)
+    frm.value.method = appendCoachField(frm.value.method, o.pattern)
+    frm.value.note = appendCoachField(frm.value.note, o.note)
+    frm.value.analysis = appendCoachField(frm.value.analysis, o.analysis)
   } else {
+    q.reasons = mergedReasons
     if (o.answer && !q.answer) q.answer = String(o.answer)
-    if (o.method && !q.method) q.method = String(o.method)
-    if (o.note) q.note = (q.note ? q.note + '\n\n' : '') + String(o.note)
-    q.reviewed = true
-    q.reviewedAt = Date.now()
+    q.method = appendCoachField(q.method, o.pattern)
+    q.note = appendCoachField(q.note, o.note)
+    q.analysis = appendCoachField(q.analysis, o.analysis)
   }
+  q.reasonCoach = {
+    ...(q.reasonCoach || {}),
+    completed: true,
+    adopted: mergedReasons,
+    deep: {
+      pattern: String(o.pattern || '').trim(),
+      note: String(o.note || '').trim(),
+      analysis: String(o.analysis || '').trim()
+    },
+    guide: o.guide || (q.reasonCoach && q.reasonCoach.guide) || {},
+    source: opts.source || 'local',
+    at: Date.now()
+  }
+  q.reviewed = true
+  q.reviewedAt = Date.now()
+  if (opts.autoSave) {
+    if (onQ()) save()
+    else saveWqs()
+  }
+  return true
 }
 // 文本兜底解析：从 AI 自由文本里尽量抠出 answer/reasons/method/note
 function parseByField(txt) {
@@ -1495,11 +1523,12 @@ watch([show, cur, rep, redo, cardShow, cardIdx, focusShow, vtShow, vtMode, vtIdx
   { flush: 'post' })
 
 const wrongCtx = reactive({
-  PAGE, addCustomReason, aiBusy, aiGuideBusy, aiPolishBusy, aiPolishReason,
+  PAGE, addCustomReason, aiBusy, aiGuideBusy, aiPolishBusy, aiPolishReason, applyCoachReview,
   ankiPush, askAiGuide, askAiReasons, askCoreDeep, boxReasons, cardFlip,
   cardIdx, cardMark, cardQueue, cardShow, checkedAllReasons, clearTypeFilter,
   closeImg, closeRedo, copyObsidianWrong, coreAiBusy, coreAiText, coreCard, coreOrigMd,
-  cur, customReason, dedupeNow, del, delPermanent, delVaultPaper, delVaultQuiz, editQShow, editQText, editQAnswer, openEditQ, saveEditQ,
+  cur, customReason, dedupeNow, del, delPermanent, delVaultPaper, delVaultQuiz, editQShow, editQText, editQAnswer,
+  editQGroup, editQSub, editQType, editGroupOptions, editSubOptions, editTypeOptions, onEditGroupChange, onEditSubChange, openEditQ, saveEditQ,
   downloadImg, exportPaperMd, exportQuizMd, fReason, fRev, fSub, fSubj, fGroup,
   fmtT, focusList, focusRedo, focusShow, frm, gotoChat, gotoDeepChat, gotoWrongExam,
   guideText, imgView, jumpN, jumpTo, kw, loadMore,
@@ -1516,7 +1545,7 @@ const wrongCtx = reactive({
   vtGo, vtIdx, vtMax, vtMode, vtNav, vtOpen,
   vtPick, vtQ, vtQueue, vtResultOf, vtScore, vtShow, vtSource, vtDifficulty, vtLibMax,
   chooseVtSource, chooseVtDiff,
-vtStartDo, vtSubmit, vtToggleOpen, wrongSubOf, wrongTypeOf,
+vtStartDo, vtSubmit, vtToggleOpen, wrongGroupOf, wrongSubOf, wrongTypeOf,
 fState, reasonTop, setReasonFilter, startReasonPractice, openHub,
   brBusy, brCancel, brDone, brErr, brLog, brN, brRows, brShow, brPick, brStart, brStop, brExportMd, brSpeakAll,
   brGroup, brSub, brType, brGroupOptions, brSubOptions, brTypeOptions, brSyncN, brOpenQ,

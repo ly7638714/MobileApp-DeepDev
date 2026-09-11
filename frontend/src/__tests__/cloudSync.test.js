@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyLocalMerge, mergeArrays, mergeSyncData, shouldSyncKey, syncScopeFromBackup } from '../utils/cloudSync'
+import { applyLocalMerge, mergeArrays, mergeSyncData, shouldSyncKey, syncScopeFromBackup, makeCloudEnvelope, cloudEnvelopeMeta, syncDataHash, syncOverview, saveSyncState } from '../utils/cloudSync'
 import { webdavFileUrl, webdavSyncUrl, describeWebdavHttp } from '../utils/webdav'
 
 const testMem = new Map()
@@ -25,6 +25,16 @@ describe('cloudSync 多端安全合并', () => {
     const m = mergeArrays(a, b)
     expect(m.find((x) => x.id === 'q1').answer).toBe('B')
     expect(m.some((x) => x.id === 'q2')).toBe(true)
+  })
+
+  it('本机无未上传改动时，同 id 同时间戳优先采用云端新版本', () => {
+    const time = 1690000000100
+    const local = [{ id: 'q1', t: time, question: '网页旧题面' }]
+    const remote = [{ id: 'q1', t: time, question: '手机新题面' }]
+    expect(mergeArrays(local, remote, 'xc_wqs', false)[0].question).toBe('网页旧题面')
+    expect(mergeArrays(local, remote, 'xc_wqs', true)[0].question).toBe('手机新题面')
+    const merged = mergeSyncData({ xc_wqs: JSON.stringify(local) }, { xc_wqs: JSON.stringify(remote) }, {}, { preferRemote: true })
+    expect(JSON.parse(merged.xc_wqs)[0].question).toBe('手机新题面')
   })
 
   it('只同步学习数据，不同步 cfg/本机 UI/密钥类键', () => {
@@ -100,5 +110,17 @@ describe('cloudSync 多端安全合并', () => {
     expect(describeWebdavHttp(404, 'PUT')).toContain('坚果云模板')
     expect(describeWebdavHttp(401, 'GET')).toContain('应用密码')
     expect(describeWebdavHttp(409, 'PUT')).toContain('冲突')
+  })
+
+  it('版本信封携带本机设备信息，并可判断本机是否有未上传改动', () => {
+    testMem.clear()
+    testMem.set('xc_mode', 'fast')
+    const env = makeCloudEnvelope({ xc_mode: 'fast' })
+    expect(env.device.id).toBeTruthy()
+    expect(cloudEnvelopeMeta(env).deviceLabel).toBe('网页/桌面端')
+    saveSyncState({ kind: 'ge', baseHash: syncDataHash(env), localT: env.t, remoteT: env.t })
+    expect(syncOverview().dirty).toBe(false)
+    testMem.set('xc_mode', 'luoji')
+    expect(syncOverview().dirty).toBe(true)
   })
 })

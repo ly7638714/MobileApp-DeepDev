@@ -289,7 +289,13 @@ export function emitHardwareBack() {
   return consumed
 }
 export function exitApp() {
+  try { if (isNativeHost() && window.xcnative.exitApp) { window.xcnative.exitApp(); return true } } catch (e) {}
   try { if (isPlusHost()) { plus.runtime.quit(); return true } } catch (e) {}
+  return false
+}
+/** 打开系统卸载确认页（自建 Android 宿主）；iOS/PWA 返回 false，由界面提示“移除主屏幕” */
+export function requestUninstall() {
+  try { if (isNativeHost() && window.xcnative.requestUninstall) return !!window.xcnative.requestUninstall() } catch (e) {}
   return false
 }
 let _lastBackAt = 0
@@ -376,7 +382,7 @@ export default {
   isPlusHost, isNativeHost, hostKind, platformInfo, isAndroidUA, isIOSUA,
   downloadsAbsRoot, toAbsolute, writeTextFile, writeBlobFile,
   setClipboard, getClipboard, shareText,
-  onHardwareBack, emitHardwareBack, exitApp, installPlusBackBehavior, installNativeBackBehavior, uninstallPlusBackBehavior,
+  onHardwareBack, emitHardwareBack, exitApp, requestUninstall, installPlusBackBehavior, installNativeBackBehavior, uninstallPlusBackBehavior,
   vibrate, nativeToast, openExternal, statusbarHeight, runtimeVersion, exposePlatform,
   nativePickFolder, nativeWriteFolderText, notify
 }

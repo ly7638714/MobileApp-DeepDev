@@ -27,6 +27,30 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
         try { android.widget.Toast.makeText(activity, msg, android.widget.Toast.LENGTH_SHORT).show() } catch (e: Exception) {}
     }
 
+    /** 试用到期：退出并移除当前任务；下次打开仍会再次被门禁拦截。 */
+    @JavascriptInterface fun exitApp() {
+        try {
+            activity.runOnUiThread {
+                if (Build.VERSION.SDK_INT >= 21) activity.finishAndRemoveTask() else activity.finish()
+            }
+        } catch (e: Exception) {}
+    }
+
+    /** 试用到期：打开系统卸载确认页（是否能静默卸载由系统决定，本应用不绕过系统确认）。 */
+    @JavascriptInterface fun requestUninstall(): Boolean {
+        return try {
+            activity.runOnUiThread {
+                try {
+                    val intent = Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + activity.packageName))
+                    activity.startActivity(intent)
+                } catch (e: Exception) {
+                    android.widget.Toast.makeText(activity, "请到系统设置中卸载本应用", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+            true
+        } catch (e: Exception) { false }
+    }
+
     // ---- 本地通知（学习提醒用）；Android 13+ 首次申请 POST_NOTIFICATIONS ----
     @JavascriptInterface fun notify(title: String, text: String): Boolean {
         return try {

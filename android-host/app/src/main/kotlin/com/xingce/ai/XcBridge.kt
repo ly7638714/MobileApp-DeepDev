@@ -126,6 +126,19 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
     @JavascriptInterface fun cacheSave(name: String, b64: String): String = ZhentiPack.cacheSave(activity, name, b64)
     @JavascriptInterface fun readCache(name: String): String = ZhentiPack.cacheRead(activity, name)
     @JavascriptInterface fun readInternalPack(rel: String): String = ZhentiPack.read(activity, rel)
+    // ---- 随包 assets（内置真题 PDF / 清单）----
+    @JavascriptInterface fun readAssetB64(rel: String): String {
+        return try {
+            val clean = rel.replace('\\', '/').trimStart('/').replace("..", "")
+            val paths = if (clean.startsWith("www/")) listOf(clean) else listOf("www/$clean", clean)
+            var bytes: ByteArray? = null
+            for (p in paths) {
+                try { activity.assets.open(p).use { bytes = it.readBytes() } } catch (e: Exception) {}
+                if (bytes != null) break
+            }
+            if (bytes == null) "ERR:assets 文件不存在：$clean" else android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        } catch (e: Exception) { "ERR:" + (e.message ?: "读取 assets 失败") }
+    }
 
     // ---- 真题PDF库：列目录 / 读PDF字节(base64) ----
     @JavascriptInterface fun listFolder(treeUri: String): String = FolderUtil.listTree(activity, treeUri)

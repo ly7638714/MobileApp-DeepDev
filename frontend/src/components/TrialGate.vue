@@ -8,9 +8,14 @@
       <template v-if="expired">
         <div class="trial-state expired">
           <div class="trial-emoji">⏰</div>
-          <h2>本次体验已结束</h2>
-          <p>感谢参与试用！体验期已于 {{ expiresText }} 截止，当前版本暂不可继续使用。</p>
-          <p class="trial-note">如需继续使用，请关注后续正式版发布。</p>
+          <h2>体验期已结束，当前版本已锁定</h2>
+          <p>本次体验已于 {{ expiresText }} 截止，测试版权限已强制停止，到期后无法继续打开使用。</p>
+          <p class="trial-note">请立即卸载测试版 APP；iPhone/iPad 用户请长按主屏幕上的试用入口，选择“移除书签/删除主屏幕图标”。</p>
+          <div class="trial-actions">
+            <button class="trial-btn" @click="onUninstall">立即卸载测试版</button>
+            <button class="trial-btn trial-btn-ghost" @click="onExit">退出应用</button>
+          </div>
+          <p v-if="actionHint" class="trial-err">{{ actionHint }}</p>
         </div>
       </template>
 
@@ -45,6 +50,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { trialExpired, trialLocked, trialUnlock, trialExpiresText, trialSlotsText } from '../utils/trial'
+import { exitApp, requestUninstall } from '../utils/platform'
 
 const code = ref('')
 const err = ref(false)
@@ -52,7 +58,17 @@ const busy = ref(false)
 const unlocked = ref(false)
 const expired = ref(false)
 const expiresText = trialExpiresText()
-const slots = trialSlotsText() || '30'
+const slots = trialSlotsText() || '10'
+const actionHint = ref('')
+
+function onUninstall() {
+  actionHint.value = ''
+  if (!requestUninstall()) actionHint.value = '当前环境不能自动卸载：iPhone/iPad 请长按主屏幕图标移除；浏览器请直接关闭并删除试用入口。'
+}
+function onExit() {
+  actionHint.value = ''
+  if (!exitApp()) actionHint.value = '当前环境不能自动退出：请直接关闭本页面，测试版权限到期后不会恢复。'
+}
 
 function doUnlock() {
   if (busy.value) return
@@ -140,5 +156,8 @@ onMounted(() => {
 .trial-expire { font-size: calc(12px * var(--ui-fs-scale, 1)) !important; color: #64748b !important; margin-top: 16px !important; }
 .trial-emoji { font-size: calc(44px * var(--ui-fs-scale, 1)); line-height: 1; }
 .trial-note { color: #94a3b8 !important; }
+.trial-actions { display: flex; gap: 10px; margin-top: 18px; }
+.trial-actions .trial-btn { margin: 0; }
+.trial-btn-ghost { background: rgba(148, 163, 184, 0.14); border: 1px solid rgba(148, 163, 184, 0.35); }
 .expired h2 { color: #fbbf24; }
 </style>

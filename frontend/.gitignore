@@ -7,3 +7,4 @@ dist-verify/
 .env.local
 *.timestamp-*.mjs
 .env.trial
+!.env.trial

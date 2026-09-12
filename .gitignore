@@ -30,6 +30,7 @@ dist-*
 .env
 .env.*
 !.env.example
+!.env.trial
 !.env.trial.example
 # 签名 / 证书
 *.keystore

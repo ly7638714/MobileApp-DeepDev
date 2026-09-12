@@ -410,7 +410,7 @@ export function useExamGen(ctx) {
       let lastParsed = null // 解析成功的题先记下，作为放宽兜底（避免 AI 质检过严反复“多次重出”）
       let calcBad = false // 数量/资料【验算】复核不过 → 禁止放宽兜底复活数值错误题
       const aiGate = !!((store.cfg.strictGen || store.cfg.dualCheck) || (store.cfg.fastAutoQC !== false && isFastGenMode())) // 是否有 AI 复核门（strict/双检/快模型质量门）
-      const aiReviewLimit = store.cfg.dualCheck ? 2 : 1 // 默认只复核一个候选；复核否决不无限重出，后续靠程序硬门收口
+      const aiReviewLimit = 3 // 国省考质量模式：三个候选逐版复核，未经命题质量总监验收的题绝不入卷
       let aiReviews = 0
       let qcHardFail = false // 质检“内容否决”硬标记：仅真否决才禁止放宽兜底（调用失败不算）
       const stage = (attempt, label) => { genStatus.value = (attempt > 0 ? '第 ' + (attempt + 1) + ' 次重出 · ' : '') + label }

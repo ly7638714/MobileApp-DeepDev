@@ -11,8 +11,17 @@ android {
         applicationId = (project.findProperty("appId") as String?) ?: "com.xingce.ai"
         minSdk = 28
         targetSdk = 35
-        versionCode = 38296
-        versionName = (project.findProperty("verName") as String?) ?: "3.8.296-nh"
+        val verNameResolved = (project.findProperty("verName") as String?) ?: "3.8.296-nh"
+        versionName = verNameResolved
+        // versionCode 自动由版本号推导：major*100000 + minor*1000 + patch（如 3.8.309 → 308309），
+        // 保证同版本号始终得到同一 code、且跨版本单调递增（无需再手动改 38296）。
+        // 仍可用 -PverCode= 手动覆盖（极少用）。
+        versionCode = (project.findProperty("verCode") as String?)?.toIntOrNull()
+            ?: run {
+                val m = Regex("(\\d+)\\.(\\d+)\\.(\\d+)").find(verNameResolved)
+                val (maj, min, pat) = if (m != null) Triple(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt()) else Triple(3, 8, 296)
+                maj * 100000 + min * 1000 + pat
+            }
         manifestPlaceholders["appLabel"] = appLabel
     }
     buildTypes {

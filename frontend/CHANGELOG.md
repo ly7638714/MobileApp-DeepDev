@@ -2,6 +2,15 @@
 
 版本号与 `src/version.js`、`package.json` 三处保持一致，发布时同步递增。
 
+## [3.8.347] — 2026-09-13 · 手机端粘贴失焦回写修复
+- Token 输入框增加 `blur` 和 `paste` 延迟回写，系统粘贴后即使不触发 `input/change`，离开输入框时也会把当前值写回本机配置。
+- 修复手机端“已粘贴成功，但离开输入框后内容自动消失”的问题。
+
+## [3.8.346] — 2026-09-13 · MuMu 实机剪贴板修复
+- 粘贴按钮改为优先使用安卓原生桥 `xcnative.clipboardGet()`，解决 WebView 中 `navigator.clipboard.readText()` 返回 Read permission denied 的问题。
+- 浏览器端仍保留 `navigator.clipboard` 降级逻辑；非原生环境不会误报成功。
+- 已接入 MuMu 实机 CDP，确认 WebView 剪贴板权限被系统拒绝，并从代码层切换到可用原生通道。
+
 ## [3.8.345] — 2026-09-13 · 手机端 Token 粘贴与同步保留修复
 - Gitee、GitHub Token 输入改为显式读取输入框当前值，不再依赖移动端可能丢失的失焦/输入事件顺序。
 - 新增「📋 粘贴」按钮，支持直接从系统剪贴板读取 Token；不支持剪贴板权限时给出长按粘贴提示。

@@ -25,7 +25,7 @@ import { getErrorLog, clearErrorLog } from './utils/errorLog'
 import { APP_VERSION } from './version'
 import { startStudyTrack, stopStudyTrack } from './utils/study'
 import { nav, navBack, syncNavFromHistory } from './utils/nav'
-import { installPlusBackBehavior, installNativeBackBehavior, onHardwareBack, nativeToast, isNativeHost } from './utils/platform' // ★安卓返回键/宿主桥
+import { installPlusBackBehavior, installNativeBackBehavior, onHardwareBack, nativeToast, isNativeHost, getClipboard } from './utils/platform' // ★安卓返回键/宿主桥
 import { runCloudSync, runCloudUpload, runCloudDownload, readSyncState, saveSyncState, syncOverview } from './utils/cloudSync'
 import { runGitHubSync, runGitHubUpload, runGitHubDownload } from './utils/githubSync'
 import { runGiteeSync, runGiteeUpload, runGiteeDownload } from './utils/giteeSync'
@@ -2064,7 +2064,8 @@ function flushSyncToken(kind) {
 }
 async function pasteSyncToken(kind) {
   try {
-    const text = await navigator.clipboard.readText()
+    const text = await getClipboard()
+    if (!text) throw new Error('empty')
     setSyncToken(kind, String(text || '').trim())
     showToast('✅ 已从剪贴板粘贴 Token', 'success')
   } catch (e) {
@@ -3532,7 +3533,7 @@ onUnmounted(() => {
         <div class="fld">
           <label>Gitee 私人令牌（Gitee 右上角头像 → 设置 → 安全设置 → 私人令牌 → 生成新令牌，勾选 projects 读写权限即可）</label>
           <div style="display:flex;gap:6px">
-            <input :value="store.cfg.gitee.token" data-sync-token="ge" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="粘贴 Gitee 私人令牌" style="flex:1;min-width:0" @input="setSyncToken('ge', $event.target.value)" @change="setSyncToken('ge', $event.target.value)" />
+            <input :value="store.cfg.gitee.token" data-sync-token="ge" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="粘贴 Gitee 私人令牌" style="flex:1;min-width:0" @input="setSyncToken('ge', $event.target.value)" @change="setSyncToken('ge', $event.target.value)" @blur="setSyncToken('ge', $event.target.value)" @paste="setTimeout(() => setSyncToken('ge', $event.target.value), 0)" />
             <button type="button" class="btn btn-gh" title="从系统剪贴板读取 Gitee Token" @click="pasteSyncToken('ge')">📋 粘贴</button>
           </div>
         </div>
@@ -3556,7 +3557,7 @@ onUnmounted(() => {
         <div class="fld">
           <label>GitHub Token（Settings → Developer settings → Personal access tokens，勾选 repo 权限）</label>
           <div style="display:flex;gap:6px">
-            <input :value="store.cfg.github.token" data-sync-token="gh" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="ghp_… 或 github_pat_…" style="flex:1;min-width:0" @input="setSyncToken('gh', $event.target.value)" @change="setSyncToken('gh', $event.target.value)" />
+            <input :value="store.cfg.github.token" data-sync-token="gh" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="ghp_… 或 github_pat_…" style="flex:1;min-width:0" @input="setSyncToken('gh', $event.target.value)" @change="setSyncToken('gh', $event.target.value)" @blur="setSyncToken('gh', $event.target.value)" @paste="setTimeout(() => setSyncToken('gh', $event.target.value), 0)" />
             <button type="button" class="btn btn-gh" title="从系统剪贴板读取 GitHub Token" @click="pasteSyncToken('gh')">📋 粘贴</button>
           </div>
         </div>

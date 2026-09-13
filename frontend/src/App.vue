@@ -421,8 +421,15 @@ const expBusy = ref(false)
 const expTpl = ref('full') // 错题导出模板：full 完整 / stems 只题干 / separate 题答分离
 const setShow = ref(false)
 const moreShow = ref(false) // 手机端顶栏「⋯」更多菜单
+const topCompact = ref(false) // 横屏/移动端：收起品牌、考试状态与页签，给内容更多空间
+try { topCompact.value = localStorage.getItem('xc_top_compact') === '1' } catch (e) {}
 function toggleMore() { moreShow.value = !moreShow.value }
 function moreGo(fn) { moreShow.value = false; fn() }
+function toggleTopCompact() {
+  topCompact.value = !topCompact.value
+  moreShow.value = false
+  try { localStorage.setItem('xc_top_compact', topCompact.value ? '1' : '0') } catch (e) {}
+}
 // ===== AI 用量与花费（实时追踪）=====
 const costShow = ref(false)
 const costStat = computed(() => costStats())
@@ -2498,6 +2505,7 @@ onUnmounted(() => {
   </div>
   <div v-if="wallStyle" class="bg-layer" :style="wallStyle"></div>
 <div class="app is-2d" :class="{ 'has-wall': wallStyle }">
+    <div v-show="!topCompact" id="xcTopChrome" class="top-chrome">
     <header class="topbar">
       <div class="brand">
         <span class="brand-logo">🧠</span>
@@ -2599,6 +2607,7 @@ onUnmounted(() => {
           <button class="top-mm-it" @click="moreGo(() => openExp('chat'))">📤 导出</button>
           <button class="top-mm-it" @click="moreGo(() => openSet())">⚙️ 设置</button>
           <button class="top-mm-it" @click="moreGo(() => doTheme())">{{ theme === 'light' ? '🌙 深色' : '☀️ 浅色' }}</button>
+          <button class="top-mm-it" @click="moreGo(() => toggleTopCompact())">▴ 收起顶部信息区</button>
         </div>
       </div>
     </header>
@@ -2607,7 +2616,15 @@ onUnmounted(() => {
       <button v-for="t in visibleTabs" :key="t.k" class="tab" :class="{ on: store.tab === t.k || (t.k === 'sync' && setShow && setGroup === 'data') }" @click="goTab(t.k)">
         {{ t.t }}
       </button>
+      <button class="tab top-compact-toggle" aria-controls="xcTopChrome" :aria-expanded="!topCompact" title="收起品牌、状态和页签，给横屏对话留出更多空间" @click="toggleTopCompact()">▴ 收起顶部</button>
     </nav>
+    </div>
+    <div v-if="topCompact" class="top-compact-bar" aria-label="顶部信息区已收起">
+      <button class="top-compact-expand" aria-controls="xcTopChrome" aria-expanded="false" title="展开品牌、状态和页签" @click="toggleTopCompact()">▾ 展开顶部</button>
+      <span class="top-compact-current">{{ (visibleTabs.find((t) => t.k === store.tab) || {}).t || store.tab }}</span>
+      <button v-if="nav.stack.length" class="top-compact-back" title="返回上一层" @click="onPopState(); navBack()">← {{ nav.stack[nav.stack.length - 1].label }}</button>
+      <span class="top-compact-hint">已收起 · 更多对话空间</span>
+    </div>
     <div class="pg" :class="{ on: store.tab === 'chat' }"><ChatPage @export-review="openExp('review')" /></div>
     <div class="pg" :class="{ on: store.tab === 'kb' }"><KbPage /></div>
     <div class="pg" :class="{ on: store.tab === 'stat' }"><StatsPage /></div>
@@ -4354,7 +4371,7 @@ onUnmounted(() => {
         <div v-else-if="petTab === 'plates'" class="pp-tabpane">
           <div class="pet-section-tip">按“大板块”查看提问、错题、复盘、复错和掌握度；展开可看细分题型。</div>
           <div v-for="p in petDashboard.plates" :key="p.group" class="pet-plate-card" :class="{ active: p.wrongs || p.asks }">
-            <div class="pet-plate-hd"><b>{{ p.label }}</b><span :class="{ danger: p.score > 0 && p.score < 45, ok: p.score >= 75 }">{{ p.score }}分</span></div>
+            <div class="pet-plate-hd"><b>{{ p.label }}</b><span :class="{ danger: p.score < 45, ok: p.score >= 75 }">{{ p.score }}分</span></div>
             <div class="pet-progress"><i :style="{ width: p.score + '%' }"></i></div>
             <div class="pet-plate-metrics"><span>💬 {{ p.asks }}</span><span>📋 {{ p.wrongs }}</span><span>✅ {{ p.reviewed }}</span><span>🔁 {{ p.repeated }}</span><span>🔔 {{ p.due }}</span></div>
             <details v-if="p.subs.length">
@@ -4419,12 +4436,11 @@ onUnmounted(() => {
             <button @click="petAnalyzeCurrent()">🧠<span>分析当前题</span></button>
             <button @click="patPet()">🐾<span>摸头</span></button>
             <button @click="doFeed()">🍖<span>喂食</span></button>
-            <button :disabled="petBatchBusy" @click="doPetTodayBatch()">📥<span>{{ petBatchBusy ? '整理中' : '截图收题' }}</span></button>
-            <button @click="skinShow = !skinShow">🎭<span>换装</span></button>
           </div>
           <div class="pet-care-card">
             <div><b>{{ petMood.emoji }} {{ petMood.label }}</b><span>饱食 {{ petHunger }}/10 · 成长 {{ petPoints }} 分 · Lv.{{ petLevel }} {{ petStage.name }}</span></div>
             <button class="btn btn-gh" @click="petRenameToggle = !petRenameToggle">✏️ 改名</button>
+            <button class="btn btn-gh" @click="skinShow = !skinShow">🎭 换装</button>
           </div>
           <div v-if="petRenameToggle" class="pet-rename pp-rename">
             <input v-model="petNameInput" :placeholder="'给 ' + pet.name + ' 改名…'" style="flex:1" @keydown.enter="doRename()" />
@@ -4441,7 +4457,6 @@ onUnmounted(() => {
               </button>
               <button class="skin-card skin-add" @click="doAddCustom()"><span class="skin-name" style="font-size:calc(20px * var(--ui-fs-scale,1))">➕</span><span class="skin-name">新增自定义</span></button>
             </div>
-            <div style="font-size:calc(11px * var(--ui-fs-scale,1));color:var(--text3);margin-top:4px">薛神、章若楠、李星云、姬如雪、花生十三、小P、小黑、文姐、巾神均为内置锁定角色（形象、人设、专属声线内置，点 ▶ 可试听参考原声）；自定义角色可自由设置名字/人设/形象/声线，想加几个加几个（去 设置→萌宠 编辑）。</div>
           </div>
         </div>
       </div>

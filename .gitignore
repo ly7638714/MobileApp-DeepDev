@@ -46,6 +46,7 @@ android-host/app/src/trialAssets/
 .vscode/
 .DS_Store
 Thumbs.db
+android-host/.kotlin/
 # 本机截图/临时（不入库）
 .shots/
 # 真题PDF 大文件：不入库（入库脚本从本地真题PDF源生成，重打包时注入 App）

@@ -11,12 +11,39 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
+import android.speech.tts.TextToSpeech
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import java.util.Locale
 
 /** 暴露给网页的桥对象 window.xcnative（配合 platform.js 使用）。 */
 class XcBridge(private val activity: Activity, private val web: WebView) {
     companion object { const val RC_FOLDER = 2001; const val RC_WRITE = 2002 }
+
+    private var nativeTts: TextToSpeech? = null
+    private var nativeTtsReady = false
+    private var pendingTts: (() -> Boolean)? = null
+
+    init {
+        try {
+            nativeTts = TextToSpeech(activity.applicationContext) { status ->
+                nativeTtsReady = status == TextToSpeech.SUCCESS
+                if (nativeTtsReady) {
+                    val r = nativeTts?.setLanguage(Locale.SIMPLIFIED_CHINESE)
+                    nativeTtsReady = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
+                }
+                if (nativeTtsReady) {
+                    val task = pendingTts
+                    pendingTts = null
+                    try { task?.invoke() } catch (e: Exception) {}
+                }
+            }
+        } catch (e: Exception) {
+            nativeTts = null
+            nativeTtsReady = false
+        }
+    }
 
     @JavascriptInterface fun appInfo(): String {
         val ver = try { activity.packageManager.getPackageInfo(activity.packageName, 0) } catch (e: Exception) { null }
@@ -86,6 +113,41 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
         if (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             try { activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 4101) } catch (e: Exception) {}
         }
+    }
+
+    // ---- 系统朗读兜底：Android WebView 没有 speechSynthesis，必须走原生 TTS ----
+    @JavascriptInterface fun ttsSpeak(text: String, rate: Double, pitch: Double): Boolean {
+        val body = text.trim()
+        if (body.isEmpty()) return false
+        val task = task@{
+            val t = nativeTts ?: return@task false
+            try {
+                t.setSpeechRate(rate.coerceIn(0.5, 2.0).toFloat())
+                t.setPitch(pitch.coerceIn(0.5, 2.0).toFloat())
+                val id = "xc-tts-" + System.nanoTime()
+                val params = Bundle().apply { putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, id) }
+                activity.runOnUiThread { try { t.speak(body, TextToSpeech.QUEUE_FLUSH, params, id) } catch (e: Exception) {} }
+                true
+            } catch (e: Exception) { false }
+        }
+        if (nativeTtsReady) return task()
+        pendingTts = task
+        return true
+    }
+
+    @JavascriptInterface fun ttsStop() {
+        pendingTts = null
+        try { nativeTts?.stop() } catch (e: Exception) {}
+    }
+
+    @JavascriptInterface fun ttsSpeaking(): Boolean = try { nativeTts?.isSpeaking == true } catch (e: Exception) { false }
+
+    fun shutdown() {
+        pendingTts = null
+        try { nativeTts?.stop() } catch (e: Exception) {}
+        try { nativeTts?.shutdown() } catch (e: Exception) {}
+        nativeTts = null
+        nativeTtsReady = false
     }
 
     // ---- 剪贴板 ----

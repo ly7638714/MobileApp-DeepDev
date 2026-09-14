@@ -161,6 +161,8 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         try { filePathCallback?.onReceiveValue(null) } catch (e: Exception) {}
         filePathCallback = null
+        try { bridge?.shutdown() } catch (e: Exception) {}
+        bridge = null
         web.destroy()
         super.onDestroy()
     }

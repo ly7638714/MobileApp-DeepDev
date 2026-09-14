@@ -16,6 +16,7 @@ import android.speech.tts.TextToSpeech
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import java.util.Locale
+import kotlin.jvm.JvmOverloads
 
 /** 暴露给网页的桥对象 window.xcnative（配合 platform.js 使用）。 */
 class XcBridge(private val activity: Activity, private val web: WebView) {
@@ -24,6 +25,7 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
     private var nativeTts: TextToSpeech? = null
     private var nativeTtsReady = false
     private var pendingTts: (() -> Boolean)? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     init {
         try {
@@ -34,6 +36,18 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
                     nativeTtsReady = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
                 }
                 if (nativeTtsReady) {
+                    // 关键：把「播完了 / 出错了」回传网页。Android 的 onDone/onError 只在这里给出，
+                    // 没有这条通道，网页端永远等不到朗读结束（表现为「第一句读了、后面全哑」）。
+                    try {
+                        nativeTts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                            override fun onStart(utteranceId: String?) {}
+                            override fun onDone(utteranceId: String?) { notifyTtsDone(utteranceId, true) }
+                            @Deprecated("Deprecated in Java")
+                            override fun onError(utteranceId: String?) { notifyTtsDone(utteranceId, false) }
+                            override fun onError(utteranceId: String?, errorCode: Int) { notifyTtsDone(utteranceId, false) }
+                            override fun onStop(utteranceId: String?, interrupted: Boolean) { notifyTtsDone(utteranceId, false) }
+                        })
+                    } catch (e: Exception) {}
                     val task = pendingTts
                     pendingTts = null
                     try { task?.invoke() } catch (e: Exception) {}
@@ -43,6 +57,16 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
             nativeTts = null
             nativeTtsReady = false
         }
+    }
+
+    /** 把原生 TTS 的结束/失败事件回传给网页的 window.__xcTtsDone(id, status)。 */
+    private fun notifyTtsDone(utteranceId: String?, ok: Boolean) {
+        try {
+            val id = (utteranceId ?: "").replace("'", "")
+            val status = if (ok) "ok" else "error"
+            val js = "window.__xcTtsDone && window.__xcTtsDone('" + id + "','" + status + "')"
+            mainHandler.post { try { web.evaluateJavascript(js, null) } catch (e: Exception) {} }
+        } catch (e: Exception) {}
     }
 
     @JavascriptInterface fun appInfo(): String {
@@ -116,17 +140,18 @@ class XcBridge(private val activity: Activity, private val web: WebView) {
     }
 
     // ---- 系统朗读兜底：Android WebView 没有 speechSynthesis，必须走原生 TTS ----
-    @JavascriptInterface fun ttsSpeak(text: String, rate: Double, pitch: Double): Boolean {
+    // id 由网页传入（'xc-sys-N'），onDone/onError 会带着同一个 id 回传，保证网页能对上号。
+    @JavascriptInterface @JvmOverloads fun ttsSpeak(text: String, rate: Double, pitch: Double, id: String? = null): Boolean {
         val body = text.trim()
         if (body.isEmpty()) return false
+        val utterId = if (id.isNullOrBlank()) "xc-tts-" + System.nanoTime() else id
         val task = task@{
             val t = nativeTts ?: return@task false
             try {
                 t.setSpeechRate(rate.coerceIn(0.5, 2.0).toFloat())
                 t.setPitch(pitch.coerceIn(0.5, 2.0).toFloat())
-                val id = "xc-tts-" + System.nanoTime()
-                val params = Bundle().apply { putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, id) }
-                activity.runOnUiThread { try { t.speak(body, TextToSpeech.QUEUE_FLUSH, params, id) } catch (e: Exception) {} }
+                val params = Bundle().apply { putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utterId) }
+                activity.runOnUiThread { try { t.speak(body, TextToSpeech.QUEUE_FLUSH, params, utterId) } catch (e: Exception) {} }
                 true
             } catch (e: Exception) { false }
         }

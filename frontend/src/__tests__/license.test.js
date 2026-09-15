@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { PLANS, licenseState, licenseInit, consumeLicensePoints, verifyLicenseCode } from '../utils/license'
+import { PLANS, TRIAL_POINT_COSTS, licenseState, licenseInit, consumeLicensePoints, verifyLicenseCode, promotionState, planPrice, trialPointCost } from '../utils/license'
 
 const mem = new Map()
 let nativeBackup = ''
@@ -43,19 +43,40 @@ describe('离线授权', () => {
     expect(licenseState.trialDaysLeft).toBe(7)
   })
 
-  it('试用点数会被逐次扣减，扣完后锁定 AI', async () => {
+  it('试用对话每次扣 5 点，其他 AI 功能每次扣 1 点', async () => {
+    await licenseInit()
+    expect(TRIAL_POINT_COSTS).toEqual({ chat: 5, feature: 1 })
+    expect(trialPointCost('chat')).toBe(5)
+    expect(trialPointCost('feature')).toBe(1)
+    expect(consumeLicensePoints(trialPointCost('chat')).ok).toBe(true)
+    expect(licenseState.trialPoints).toBe(25)
+    expect(consumeLicensePoints(trialPointCost('feature')).ok).toBe(true)
+    expect(licenseState.trialPoints).toBe(24)
+  })
+
+  it('试用点数不足时拒绝请求，扣完后锁定全部 AI', async () => {
     await licenseInit()
     const r = consumeLicensePoints(30)
     expect(r.ok).toBe(true)
     expect(licenseState.trialPoints).toBe(0)
     expect(licenseState.active).toBe(false)
-    expect(consumeLicensePoints(1).ok).toBe(false)
+    expect(consumeLicensePoints(trialPointCost('chat')).ok).toBe(false)
+    expect(consumeLicensePoints(trialPointCost('feature')).ok).toBe(false)
   })
 
   it('正式版套餐包含月、季度、半年和年卡，且均无自动扣款', async () => {
     expect(PLANS.map((p) => p.id)).toEqual(['month', 'quarter', 'halfyear', 'year', 'gk', 'province'])
     expect(PLANS.find((p) => p.id === 'halfyear')).toMatchObject({ price: 169, days: 180 })
     expect(PLANS.find((p) => p.id === 'year')).toMatchObject({ price: 299, days: 365 })
+  })
+
+  it('本周日 08:00-22:00 所有套餐限时立减 5 元', async () => {
+    expect(promotionState(Date.parse('2026-09-20T07:59:59+08:00')).active).toBe(false)
+    expect(promotionState(Date.parse('2026-09-20T08:00:00+08:00')).active).toBe(true)
+    expect(promotionState(Date.parse('2026-09-20T22:00:00+08:00')).active).toBe(true)
+    expect(promotionState(Date.parse('2026-09-20T22:00:01+08:00')).active).toBe(false)
+    expect(planPrice(PLANS.find((p) => p.id === 'month'), Date.parse('2026-09-20T12:00:00+08:00'))).toBe(34)
+    expect(planPrice(PLANS.find((p) => p.id === 'year'), Date.parse('2026-09-20T12:00:00+08:00'))).toBe(294)
   })
 
   afterEach(() => {

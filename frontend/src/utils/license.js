@@ -7,6 +7,7 @@ const STORAGE_KEY = 'xc_offline_license_v1'
 const DEVICE_KEY = 'xc_device_code_v1'
 const TRIAL_DAYS = 7
 const TRIAL_POINTS = 30
+const RENEWAL_REMIND_DAYS = 3
 export const TRIAL_POINT_COSTS = Object.freeze({ chat: 5, feature: 1 })
 const TRIAL_KEY = 'xc_offline_trial_v1'
 const NATIVE_BACKUP_VERSION = 1
@@ -19,7 +20,7 @@ export const PLANS = [
   { id: 'halfyear', name: '半年卡', price: 169, days: 180, tag: '半年备考', summary: '一次购买，连续使用 180 天', details: ['适合半年以上系统备考', '到期后不自动扣款，无需绑定支付账户', '授权仍绑定当前设备码，续期时重新签发'] },
   { id: 'year', name: '年卡', price: 299, days: 365, tag: '长期备考', summary: '一次购买，连续使用 365 天', details: ['适合全年国考、省考连续备考', '到期后不自动扣款，不会有隐藏续费', '一年内无需重复购买，授权仍绑定当前设备码'] },
   { id: 'gk', name: '国考季票', price: 129, exam: 'national', tag: '考试周期', summary: '覆盖国考备考周期至笔试结束', details: ['有效期至 2026-12-06 国考笔试结束', '适合全程备考国考的考生', '到期后不自动续费'] },
-  { id: 'province', name: '省考季票', price: 129, exam: 'province', tag: '考试周期', summary: '覆盖指定省份省考备考周期', details: ['有效期按所选省考考试周期签发', '适合明确参加某一省省考的考生', '续期或考试时间变化时重新签发新码'] }
+  { id: 'province', name: '省考季票', price: 159, exam: 'province', tag: '考试周期', summary: '覆盖指定省份省考备考周期', details: ['有效期按所选省考考试周期签发', '适合明确参加某一省省考的考生', '续期或考试时间变化时重新签发新码'] }
 ]
 
 export const PROMOTION = {
@@ -31,7 +32,15 @@ export const PROMOTION = {
 
 export function promotionState(nowMs = Date.now()) {
   const active = nowMs >= PROMOTION.startsAt && nowMs <= PROMOTION.endsAt
-  return { ...PROMOTION, active, text: active ? PROMOTION.name : '本活动已结束' }
+  const upcoming = nowMs < PROMOTION.startsAt
+  const ended = nowMs > PROMOTION.endsAt
+  const state = active ? 'active' : upcoming ? 'upcoming' : 'ended'
+  const text = active
+    ? '活动进行中：所有会员立减 5 元'
+    : upcoming
+      ? '活动预告：2026-09-20 周日 08:00–22:00 所有会员立减 5 元'
+      : '本活动已结束，恢复原价'
+  return { ...PROMOTION, active, upcoming, ended, state, text }
 }
 
 export function planPrice(plan, nowMs = Date.now()) {
@@ -42,6 +51,20 @@ export function planPrice(plan, nowMs = Date.now()) {
 
 export function trialPointCost(kind = 'feature') {
   return kind === 'chat' ? TRIAL_POINT_COSTS.chat : TRIAL_POINT_COSTS.feature
+}
+
+export function paidRenewalState(expiresAt, nowMs = Date.now()) {
+  const exp = Number(expiresAt) || 0
+  const leftMs = exp - nowMs
+  const daysLeft = leftMs > 0 ? Math.max(0, Math.ceil(leftMs / 86400000)) : 0
+  const expired = !(leftMs > 0)
+  const due = !expired && daysLeft <= RENEWAL_REMIND_DAYS
+  return {
+    daysLeft,
+    expired,
+    due,
+    message: expired ? '正式会员已到期，AI 功能已停止，请续订后重新激活。' : due ? '会员将在 ' + daysLeft + ' 天内到期，请提前续订，避免到期后中断使用。' : ''
+  }
 }
 
 export const licenseState = reactive({
@@ -55,6 +78,9 @@ export const licenseState = reactive({
   licenseId: '',
   trialPoints: TRIAL_POINTS,
   trialDaysLeft: TRIAL_DAYS,
+  paidDaysLeft: 0,
+  renewalDue: false,
+  renewalMessage: '',
   viewOnly: false,
   message: ''
 })
@@ -211,6 +237,40 @@ function applyTrial() {
   return false
 }
 
+function applyPaid(payload) {
+  licenseState.ready = true
+  licenseState.active = true
+  licenseState.mode = 'paid'
+  licenseState.plan = payload.plan || 'month'
+  licenseState.planName = (PLANS.find((x) => x.id === payload.plan) || {}).name || '正式套餐'
+  licenseState.expiresAt = Number(payload.exp) || 0
+  licenseState.licenseId = String(payload.lid || '')
+  licenseState.renewalDue = false
+  licenseState.renewalMessage = ''
+  refreshLicenseClock()
+}
+
+export function refreshLicenseClock(nowMs = Date.now()) {
+  if (!licenseState.ready) return licenseState
+  if (licenseState.mode === 'paid') {
+    const r = paidRenewalState(licenseState.expiresAt, nowMs)
+    licenseState.paidDaysLeft = r.daysLeft
+    licenseState.renewalDue = r.due
+    licenseState.renewalMessage = r.message
+    if (r.expired) {
+      licenseState.active = false
+      licenseState.mode = 'expired'
+      licenseState.message = r.message
+    } else {
+      licenseState.active = true
+      licenseState.message = '已激活 · 剩余 ' + r.daysLeft + ' 天 · 到期 ' + new Date(licenseState.expiresAt).toLocaleDateString('zh-CN')
+    }
+    return licenseState
+  }
+  if (licenseState.mode === 'trial') applyTrial()
+  return licenseState
+}
+
 export async function licenseInit() {
   if (IS_TRIAL_BUILD) {
     licenseState.ready = true
@@ -229,17 +289,22 @@ export async function licenseInit() {
   if (saved && saved.code) {
     const r = await verifyLicenseCode(saved.code, licenseState.deviceCode)
     if (r.ok) {
-      const p = r.payload
-      licenseState.active = true
-      licenseState.mode = 'paid'
-      licenseState.plan = p.plan || 'month'
-      licenseState.planName = (PLANS.find((x) => x.id === p.plan) || {}).name || '正式套餐'
-      licenseState.expiresAt = Number(p.exp) || 0
-      licenseState.licenseId = String(p.lid || '')
-      licenseState.message = '已激活 · 到期 ' + new Date(licenseState.expiresAt).toLocaleDateString('zh-CN')
+      applyPaid(r.payload)
       licenseState.ready = true
       return licenseState
     }
+    // 已购买但激活码过期/损坏时，绝不再回退到试用点数。
+    licenseState.active = false
+    licenseState.mode = 'expired'
+    licenseState.plan = ''
+    licenseState.planName = '会员已到期'
+    licenseState.expiresAt = 0
+    licenseState.paidDaysLeft = 0
+    licenseState.renewalDue = false
+    licenseState.renewalMessage = ''
+    licenseState.message = '正式会员已到期或授权失效，AI 功能已停止，请续订后重新激活。'
+    licenseState.ready = true
+    return licenseState
   }
   applyTrial()
   licenseState.licenseId = ''
@@ -292,4 +357,4 @@ export function licenseDeviceCode() {
   return getDeviceCode()
 }
 
-export default { PLANS, PROMOTION, TRIAL_POINT_COSTS, promotionState, planPrice, trialPointCost, licenseState, licenseInit, activateLicenseCode, verifyLicenseCode, requireLicense, consumeLicensePoints, licenseDeviceCode }
+export default { PLANS, PROMOTION, TRIAL_POINT_COSTS, promotionState, planPrice, trialPointCost, paidRenewalState, refreshLicenseClock, licenseState, licenseInit, activateLicenseCode, verifyLicenseCode, requireLicense, consumeLicensePoints, licenseDeviceCode }

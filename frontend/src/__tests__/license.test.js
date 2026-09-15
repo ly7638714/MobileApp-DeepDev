@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { PLANS, TRIAL_POINT_COSTS, licenseState, licenseInit, consumeLicensePoints, verifyLicenseCode, promotionState, planPrice, trialPointCost } from '../utils/license'
+import { PLANS, TRIAL_POINT_COSTS, licenseState, licenseInit, activateLicenseCode, consumeLicensePoints, verifyLicenseCode, promotionState, planPrice, trialPointCost, paidRenewalState } from '../utils/license'
 
 const mem = new Map()
 let nativeBackup = ''
@@ -64,17 +64,37 @@ describe('离线授权', () => {
     expect(consumeLicensePoints(trialPointCost('feature')).ok).toBe(false)
   })
 
+  it('正式会员不消耗试用点数，只受到期时间限制', async () => {
+    localStorage.setItem('xc_device_code_v1', 'XC-TEST-0000-0001')
+    const a = await activateLicenseCode(CODE)
+    expect(a.ok).toBe(true)
+    expect(licenseState.mode).toBe('paid')
+    const before = licenseState.trialPoints
+    const r = consumeLicensePoints(999)
+    expect(r).toMatchObject({ ok: true, cost: 0 })
+    expect(licenseState.trialPoints).toBe(before)
+  })
+
+  it('会员到期前 3 天进入续订提醒，到期后强制停用', () => {
+    const now = Date.parse('2026-09-15T12:00:00+08:00')
+    expect(paidRenewalState(now + 4 * 86400000, now).due).toBe(false)
+    expect(paidRenewalState(now + 3 * 86400000, now)).toMatchObject({ due: true, daysLeft: 3, expired: false })
+    expect(paidRenewalState(now - 1, now)).toMatchObject({ due: false, daysLeft: 0, expired: true })
+  })
+
   it('正式版套餐包含月、季度、半年和年卡，且均无自动扣款', async () => {
     expect(PLANS.map((p) => p.id)).toEqual(['month', 'quarter', 'halfyear', 'year', 'gk', 'province'])
     expect(PLANS.find((p) => p.id === 'halfyear')).toMatchObject({ price: 169, days: 180 })
     expect(PLANS.find((p) => p.id === 'year')).toMatchObject({ price: 299, days: 365 })
+    expect(PLANS.find((p) => p.id === 'gk')).toMatchObject({ price: 129 })
+    expect(PLANS.find((p) => p.id === 'province')).toMatchObject({ price: 159 })
   })
 
   it('本周日 08:00-22:00 所有套餐限时立减 5 元', async () => {
-    expect(promotionState(Date.parse('2026-09-20T07:59:59+08:00')).active).toBe(false)
-    expect(promotionState(Date.parse('2026-09-20T08:00:00+08:00')).active).toBe(true)
-    expect(promotionState(Date.parse('2026-09-20T22:00:00+08:00')).active).toBe(true)
-    expect(promotionState(Date.parse('2026-09-20T22:00:01+08:00')).active).toBe(false)
+    expect(promotionState(Date.parse('2026-09-20T07:59:59+08:00'))).toMatchObject({ active: false, upcoming: true, state: 'upcoming' })
+    expect(promotionState(Date.parse('2026-09-20T08:00:00+08:00'))).toMatchObject({ active: true, upcoming: false, state: 'active' })
+    expect(promotionState(Date.parse('2026-09-20T22:00:00+08:00'))).toMatchObject({ active: true, ended: false, state: 'active' })
+    expect(promotionState(Date.parse('2026-09-20T22:00:01+08:00'))).toMatchObject({ active: false, ended: true, state: 'ended' })
     expect(planPrice(PLANS.find((p) => p.id === 'month'), Date.parse('2026-09-20T12:00:00+08:00'))).toBe(34)
     expect(planPrice(PLANS.find((p) => p.id === 'year'), Date.parse('2026-09-20T12:00:00+08:00'))).toBe(294)
   })

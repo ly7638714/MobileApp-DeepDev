@@ -16,6 +16,14 @@ const visible = computed(() => props.manual || (!licenseState.active && !license
 const expireText = computed(() => licenseState.expiresAt ? new Date(licenseState.expiresAt).toLocaleString('zh-CN') : '未激活')
 const selectedPlan = computed(() => PLANS.find((p) => p.id === selectedPlanId.value) || PLANS[0])
 const promo = computed(() => promotionState(promoNow.value))
+const promoCountdown = computed(() => {
+  if (!promo.value.upcoming) return ''
+  const ms = Math.max(0, promo.value.startsAt - promoNow.value)
+  const totalHours = Math.ceil(ms / 3600000)
+  const days = Math.floor(totalHours / 24)
+  const hours = totalHours % 24
+  return days > 0 ? days + ' 天 ' + hours + ' 小时' : hours + ' 小时'
+})
 
 function selectPlan(id) { selectedPlanId.value = id }
 function displayPrice(plan) { return planPrice(plan, promoNow.value) }
@@ -68,7 +76,7 @@ function viewOnly() {
       <div class="license-status" :class="{ ok: licenseState.active }">
         <span>当前方案</span>
         <b>{{ licenseState.planName }}</b>
-        <em v-if="licenseState.mode === 'paid'">到期：{{ expireText }}</em>
+        <em v-if="licenseState.mode === 'paid'">剩余 {{ licenseState.paidDaysLeft }} 天 · 到期：{{ expireText }}</em>
         <em v-else-if="licenseState.mode === 'trial'">剩余 {{ licenseState.trialDaysLeft }} 天 · {{ licenseState.trialPoints }} 点</em>
       </div>
 
@@ -78,9 +86,21 @@ function viewOnly() {
         <p>点数耗尽后，所有 AI 功能会立即停止，不会继续调用模型；学习数据、错题和设置仍可查看与导出。</p>
       </div>
 
-      <div v-if="promo.active" class="license-promo">
-        <b>限时活动</b>
-        <span>2026-09-20 周日 08:00–22:00，所有订阅立减 5 元，不与其他优惠叠加。</span>
+      <div v-else-if="licenseState.mode === 'paid'" class="license-points-rule paid">
+        <b>正式会员无点数限制</b>
+        <p>你使用自己的 API Key，会员有效期内所有 AI 功能都不消耗试用点数；正式会员只受到期时间约束。</p>
+      </div>
+
+      <div v-if="licenseState.renewalDue" class="license-renewal">
+        <b>续订提醒</b>
+        <p>{{ licenseState.renewalMessage }}</p>
+      </div>
+
+      <div class="license-promo" :class="promo.state">
+        <b>{{ promo.active ? '🔥 限时活动进行中' : promo.upcoming ? '📅 限时活动预告' : '限时活动' }}</b>
+        <span v-if="promo.upcoming">2026-09-20 周日 08:00–22:00，所有订阅立减 5 元；距离开始约 {{ promoCountdown }}。开始后页面会自动显示活动价，无需领券。</span>
+        <span v-else-if="promo.active">2026-09-20 周日 08:00–22:00 内购买任意会员立减 5 元。当前已自动显示活动价，按活动价付款即可，无需领券。</span>
+        <span v-else>活动已于 2026-09-20 22:00 结束，当前恢复原价。</span>
       </div>
 
       <div class="license-plans">
@@ -108,6 +128,8 @@ function viewOnly() {
 
       <div class="license-buy">
         <b>购买方式</b>
+        <p v-if="promo.active">活动参与方式：在 2026-09-20 周日 08:00–22:00 内扫码付款，备注设备码后四位并注明“周日立减”，按页面活动价支付即可；活动价不与其他优惠叠加。</p>
+        <p v-else-if="promo.upcoming">活动开始前可按原价购买；希望参加立减 5 元活动，请在 2026-09-20 周日 08:00–22:00 内付款。到点后页面会自动切换为活动价，无需提前报名或领取优惠券。</p>
         <p>请到粉丝群置顶消息扫描收款码。付款备注请填写设备码后四位，并将付款截图和设备码私发给管理员。</p>
         <p>收到激活码后，填入下方输入框即可解锁。离线版使用你自己的 API Key。</p>
       </div>
@@ -121,8 +143,10 @@ function viewOnly() {
           <li>更换设备、卸载软件、清除浏览器站点数据、清除应用数据、恢复出厂设置、使用无痕模式、修改系统时间、使用非官方修改版本等个人操作导致会员丢失或失效的，本店概不负责；核对订单后可在合理范围内协助迁移。</li>
           <li>激活码与到期时间以签发记录为准。请勿公开转发激活码，避免被他人滥用。</li>
           <li>所有套餐均为一次付款、固定有效期，不自动续费、不自动扣款、不默认续约。</li>
+          <li>正式会员使用自己的 API Key，会员期内不消耗试用点数；到期前 3 天开始提醒续订，到期后统一停止 AI 功能。</li>
           <li>虚拟商品激活后不支持无理由退款；未激活且未使用的订单，请付款前与管理员确认规则。</li>
           <li>本周日活动仅限 2026-09-20 08:00–22:00 内完成付款的订单，每种订阅立减 5 元；过期不补、不可追溯、不与其他优惠叠加。</li>
+          <li>活动无需领券或报名：到活动时间后会员页自动显示活动价，按活动价付款并备注“周日立减”即可。提前或超时付款均按原价处理。</li>
         </ul>
       </div>
 
@@ -166,6 +190,10 @@ function viewOnly() {
 .license-points-rule { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--glass-border); border-radius: 11px; background: rgba(127,127,127,.04); }
 .license-points-rule b { font-size: calc(12.5px * var(--ui-fs-scale, 1)); }
 .license-points-rule p { margin: 5px 0 0; color: var(--text2); font-size: calc(11px * var(--ui-fs-scale, 1)); line-height: 1.6; }
+.license-points-rule.paid { border-color: rgba(52,211,153,.38); background: rgba(52,211,153,.07); }
+.license-renewal { margin-top: 10px; padding: 10px 12px; border: 1px solid rgba(251,191,36,.55); border-radius: 11px; color: var(--text); background: rgba(251,191,36,.12); }
+.license-renewal b { font-size: calc(12.5px * var(--ui-fs-scale, 1)); }
+.license-renewal p { margin: 5px 0 0; color: var(--text2); font-size: calc(11px * var(--ui-fs-scale, 1)); line-height: 1.6; }
 .license-status em { grid-column: 1 / -1; color: var(--text3); font-size: calc(11px * var(--ui-fs-scale, 1)); font-style: normal; }
 .license-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; margin: 14px 0 10px; }
 .license-plan { min-width: 0; padding: 10px; border: 1px solid var(--glass-border); border-radius: 10px; background: rgba(127,127,127,.06); color: var(--text); text-align: left; cursor: pointer; font: inherit; }
@@ -185,6 +213,8 @@ function viewOnly() {
 .license-detail ul { margin: 4px 0 0; padding-left: 17px; color: var(--text3); font-size: calc(11px * var(--ui-fs-scale, 1)); line-height: 1.65; }
 .ld-promo { color: var(--accent) !important; font-weight: 600; }
 .license-promo { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; padding: 9px 11px; border-radius: 11px; color: #9a5a00; background: #fff5d6; border: 1px solid #f1cf73; font-size: calc(11px * var(--ui-fs-scale, 1)); }
+.license-promo.upcoming { color: var(--text2); background: rgba(59,130,246,.08); border-color: rgba(59,130,246,.32); }
+.license-promo.ended { color: var(--text3); background: rgba(127,127,127,.06); border-color: var(--glass-border); }
 .license-promo b { flex: 0 0 auto; }
 .license-plan strong del { margin-left: 6px; color: var(--text3); font-size: 11px; font-weight: 400; }
 .license-buy, .license-device, .license-activate { border: 1px solid var(--glass-border); border-radius: 11px; background: rgba(127,127,127,.045); }

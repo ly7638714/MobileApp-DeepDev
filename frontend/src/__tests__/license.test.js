@@ -52,9 +52,10 @@ describe('离线授权', () => {
     expect(consumeLicensePoints(1).ok).toBe(false)
   })
 
-  it('正式版套餐包含单月、连续月和季度订阅', async () => {
-    expect(PLANS.map((p) => p.id)).toEqual(['month', 'continuous', 'quarter', 'gk', 'province'])
-    expect(PLANS.find((p) => p.id === 'continuous')).toMatchObject({ price: 35, days: 30 })
+  it('正式版套餐包含月、季度、半年和年卡，且均无自动扣款', async () => {
+    expect(PLANS.map((p) => p.id)).toEqual(['month', 'quarter', 'halfyear', 'year', 'gk', 'province'])
+    expect(PLANS.find((p) => p.id === 'halfyear')).toMatchObject({ price: 169, days: 180 })
+    expect(PLANS.find((p) => p.id === 'year')).toMatchObject({ price: 299, days: 365 })
   })
 
   afterEach(() => {

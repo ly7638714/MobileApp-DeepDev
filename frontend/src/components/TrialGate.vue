@@ -3,7 +3,7 @@
     <div class="trial-card">
       <div class="trial-logo">🎓</div>
       <h1 class="trial-title">行测名师AI小助理</h1>
-      <p class="trial-sub">体验版 · 开放 {{ slots }} 个体验名额</p>
+      <p class="trial-sub">限时体验版 · 统一邀请码</p>
 
       <template v-if="expired">
         <div class="trial-state expired">
@@ -19,14 +19,23 @@
         </div>
       </template>
 
+      <template v-else-if="notStarted">
+        <div class="trial-state">
+          <div class="trial-emoji">🕘</div>
+          <h2>体验尚未开始</h2>
+          <p>本轮体验将于 {{ startsText }} 开放，凭统一邀请码进入，不限制名额。</p>
+          <p class="trial-expire">体验截止时间：{{ expiresText }}</p>
+        </div>
+      </template>
+
       <template v-else-if="!unlocked">
         <div class="trial-state">
-          <p class="trial-tip">本轮仅开放 {{ slots }} 个名额，先到先得（每个体验者使用自己的 API Key）</p>
+          <p class="trial-tip">体验已开放，不限制名额；请输入统一邀请码进入（每个体验者使用自己的 API Key）</p>
           <input
             v-model="code"
             class="trial-input"
             type="text"
-            placeholder="请输入邀请码"
+            placeholder="XINGCE-5-SHIYONG"
             autocomplete="off"
             @keyup.enter="doUnlock"
           />
@@ -49,16 +58,17 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { trialExpired, trialLocked, trialUnlock, trialExpiresText, trialSlotsText } from '../utils/trial'
+import { trialExpired, trialLocked, trialUnlock, trialExpiresText, trialStartsText, trialStartTs } from '../utils/trial'
 import { exitApp, requestUninstall } from '../utils/platform'
 
+const unlocked = ref(false)
+const expired = ref(false)
+const notStarted = ref(false)
 const code = ref('')
 const err = ref(false)
 const busy = ref(false)
-const unlocked = ref(false)
-const expired = ref(false)
 const expiresText = trialExpiresText()
-const slots = trialSlotsText() || '10'
+const startsText = trialStartsText()
 const actionHint = ref('')
 
 function onUninstall() {
@@ -79,18 +89,23 @@ function doUnlock() {
     busy.value = false
     if (r.ok) {
       unlocked.value = true
-      setTimeout(() => { location.reload() }, 600)
+      setTimeout(() => { location.reload() }, 500)
     } else if (r.reason === 'expired') {
       expired.value = true
     } else {
       err.value = true
     }
-  }, 200)
+  }, 150)
 }
 
 onMounted(() => {
   expired.value = trialExpired()
+  notStarted.value = !expired.value && Date.now() < trialStartTs()
   unlocked.value = !trialLocked()
+  if (notStarted.value) {
+    const wait = Math.max(1000, trialStartTs() - Date.now() + 500)
+    setTimeout(() => { try { location.reload() } catch (e) {} }, wait)
+  }
 })
 </script>
 

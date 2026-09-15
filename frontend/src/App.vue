@@ -42,6 +42,7 @@ import { pet, petShow, petMuted, bubble, petStats, petStage, petLevel, petHunger
 import { petBatchCollectTodayWrong } from './utils/petBatch'
 import { buildPetDashboard } from './utils/petProfile'
 import { loadCheckinState, dateKey } from './utils/checkin'
+const IS_TRIAL_BUILD = import.meta.env.VITE_TRIAL_MODE === 'true'
 // 全局 toast 别名：导出/截图等工具里的 window.showToast 都要能弹提示（否则成功失败都无反应）
 try { window.showToast = (m, t) => showToast(m, t) } catch (e) {}
 const petMd = (t) => renderMd(String(t || ''))
@@ -2534,7 +2535,7 @@ onUnmounted(() => {
       <div class="auth-foot">💬 六大板块 · 名师方法论 · AI 出题/答疑/朗读 · 网页/iPad + 独立手机端</div>
     </div>
   </div>
-  <LicenseGate v-if="licenseState.ready" :manual="licenseShow" @close="licenseShow = false" />
+  <LicenseGate v-if="licenseState.ready && !IS_TRIAL_BUILD" :manual="licenseShow" @close="licenseShow = false" />
   <!-- 自定义确认弹窗（账号重置/删除等，替代原生 confirm，PWA/webview 更稳） -->
   <div v-if="authConfirm" class="auth-confirm-ov" @click.self="authConfirmNo()">
     <div class="auth-confirm-box">
@@ -2622,7 +2623,7 @@ onUnmounted(() => {
         <button class="cost-pill" :class="{ warn: costToday > 0, live: costLive.active }" :title="costLive.active ? '🔴 正在调用 AI（' + (COST_FEATURES[costLive.feature] || costLive.feature) + ' · ' + (costLive.model || '') + '），完成自动记账' : '💰 AI 用量与花费（实时追踪）：点开查看明细、计价表、清空记录'" @click="costShow = true">
           💰 {{ fmtCost(costToday) }}<span v-if="costLive.active" class="cost-pill-live"></span>
         </button>
-        <button class="btn" style="padding: 4px 12px; font-size: calc(13px * var(--ui-fs-scale, 1))" :class="{ on: licenseState.mode === 'paid' }" title="套餐、设备码、到期时间和激活码" @click="licenseShow = true">💎 会员</button>
+        <button v-if="!IS_TRIAL_BUILD" class="btn" style="padding: 4px 12px; font-size: calc(13px * var(--ui-fs-scale, 1))" :class="{ on: licenseState.mode === 'paid' }" title="套餐、设备码、到期时间和激活码" @click="licenseShow = true">💎 会员</button>
         <button class="btn" :class="{ on: setShow && setGroup === 'data' }" style="padding: 4px 12px; font-size: calc(13px * var(--ui-fs-scale, 1))" title="数据同步与保存：本地基础、Gitee、GitHub、WebDAV、导出导入" @click="openDataSync()">
           💾 数据同步
         </button>
@@ -2647,7 +2648,7 @@ onUnmounted(() => {
           </div>
           <div class="top-mm-row"><span class="status-pill"><span class="dot" :class="stDot"></span><span>{{ stStat }}</span></span></div>
           <button class="top-mm-it" @click="moreGo(() => costShow = true)">💰 用量与花费 {{ fmtCost(costToday) }}</button>
-          <button class="top-mm-it" @click="moreGo(() => { licenseShow = true })">💎 会员与激活</button>
+          <button v-if="!IS_TRIAL_BUILD" class="top-mm-it" @click="moreGo(() => { licenseShow = true })">💎 会员与激活</button>
           <button class="top-mm-it" @click="moreGo(() => openDataSync())">💾 数据同步与保存</button>
           <button class="top-mm-it" @click="moreGo(() => openExp('chat'))">📤 导出</button>
           <button class="top-mm-it" @click="moreGo(() => openSet())">⚙️ 设置</button>

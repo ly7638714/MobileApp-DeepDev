@@ -7,13 +7,17 @@ const STORAGE_KEY = 'xc_offline_license_v1'
 const DEVICE_KEY = 'xc_device_code_v1'
 const TRIAL_DAYS = 7
 const TRIAL_POINTS = 30
+const TRIAL_KEY = 'xc_offline_trial_v1'
+const NATIVE_BACKUP_VERSION = 1
+const IS_TRIAL_BUILD = import.meta.env.VITE_TRIAL_MODE === 'true'
 const PUBLIC_JWK = { kty: 'EC', crv: 'P-256', x: '_eTtxfkTlCNxT5oL_JlxK9Vy5poKtJrNPhPl738Ctlo', y: 'ofbmtixWhaQQTyFgirnWvB7CLdkR7Pys7exu04RDLhc' }
 
 export const PLANS = [
-  { id: 'month', name: '标准月付', price: 39, days: 30, tag: '短期使用' },
-  { id: 'quarter', name: '标准季度付', price: 99, days: 90, tag: '推荐' },
-  { id: 'gk', name: '国考季票', price: 129, exam: 'national', tag: '到国考笔试后 7 天' },
-  { id: 'province', name: '省考季票', price: 129, exam: 'province', tag: '到所选省考笔试后 7 天' }
+  { id: 'month', name: '单月订阅', price: 39, days: 30, tag: '短期使用', summary: '一次购买，连续使用 30 天', details: ['适合短期冲刺或先体验完整功能', '到期后不自动续费，也不自动扣款', '续费时继续使用当前设备码重新签发'] },
+  { id: 'continuous', name: '连续月订阅', price: 35, days: 30, tag: '按月续费', summary: '按月连续使用，到期前续发下月授权', details: ['适合长期稳定备考用户', '离线版不自动扣款，不会产生未知费用', '到期前用同一设备码联系管理员续发下月激活码', '连续订阅按 30 天为一期，不改变设备码'] },
+  { id: 'quarter', name: '季度订阅', price: 99, days: 90, tag: '推荐', summary: '一次购买，连续使用 90 天', details: ['适合较长备考周期，平均使用成本更低', '到期后不自动扣款', '授权仍绑定当前设备码'] },
+  { id: 'gk', name: '国考季票', price: 129, exam: 'national', tag: '考试周期', summary: '覆盖国考备考周期至笔试结束', details: ['有效期至 2026-12-06 国考笔试结束', '适合全程备考国考的考生', '到期后不自动续费'] },
+  { id: 'province', name: '省考季票', price: 129, exam: 'province', tag: '考试周期', summary: '覆盖指定省份省考备考周期', details: ['有效期按所选省考考试周期签发', '适合明确参加某一省省考的考生', '续期或考试时间变化时重新签发新码'] }
 ]
 
 export const licenseState = reactive({
@@ -32,12 +36,77 @@ export const licenseState = reactive({
 
 function now() { return Date.now() }
 
+function validDevice(code) {
+  return /^XC-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(String(code || '').trim())
+}
+
+function nativeBridge() {
+  try {
+    const host = typeof window !== 'undefined' ? window : null
+    return host && host.xcnative ? host.xcnative : null
+  } catch (e) { return null }
+}
+
+function readNativeBackup() {
+  try {
+    const b = nativeBridge()
+    if (!b || typeof b.licenseBackupRead !== 'function') return null
+    const raw = String(b.licenseBackupRead() || '')
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (!obj || obj.v !== NATIVE_BACKUP_VERSION) return null
+    return obj
+  } catch (e) { return null }
+}
+
+function writeNativeBackup() {
+  try {
+    const b = nativeBridge()
+    if (!b || typeof b.licenseBackupWrite !== 'function') return
+    b.licenseBackupWrite(JSON.stringify({
+      v: NATIVE_BACKUP_VERSION,
+      license: localStorage.getItem(STORAGE_KEY) || '',
+      device: localStorage.getItem(DEVICE_KEY) || '',
+      trial: localStorage.getItem(TRIAL_KEY) || ''
+    }))
+  } catch (e) {}
+}
+
+/**
+ * 覆盖安装时 WebView 存储通常保留；若系统迁移导致 localStorage 丢失，
+ * 则从 Android 私有 SharedPreferences 恢复同一设备上的授权码、设备码和试用状态。
+ * 云端同步不包含这些字段，卸载或手动清除应用数据后也不会恢复。
+ */
+function restoreNativeBackup() {
+  const backup = readNativeBackup()
+  if (!backup) return
+  const localDevice = String(localStorage.getItem(DEVICE_KEY) || '').trim()
+  const localLicense = String(localStorage.getItem(STORAGE_KEY) || '').trim()
+  const backupDevice = String(backup.device || '').trim()
+  const backupLicense = String(backup.license || '').trim()
+  const backupPairValid = validDevice(backupDevice) && !!backupLicense
+  const localLicenseLooksValid = /^XC1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(localLicense)
+  const localPairUsable = localLicenseLooksValid && validDevice(localDevice) && (!validDevice(backupDevice) || localDevice === backupDevice)
+  if (backupPairValid && !localPairUsable) {
+    try {
+      localStorage.setItem(DEVICE_KEY, backupDevice)
+      localStorage.setItem(STORAGE_KEY, backupLicense)
+    } catch (e) {}
+  } else if (!validDevice(localDevice) && validDevice(backupDevice)) {
+    try { localStorage.setItem(DEVICE_KEY, backupDevice) } catch (e) {}
+  }
+  if (!localStorage.getItem(TRIAL_KEY) && backup.trial) {
+    try { localStorage.setItem(TRIAL_KEY, String(backup.trial)) } catch (e) {}
+  }
+}
+
 function readJson(key, d = null) {
   try { return JSON.parse(localStorage.getItem(key) || 'null') ?? d } catch (e) { return d }
 }
 
 function writeJson(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch (e) {}
+  if (key === STORAGE_KEY || key === DEVICE_KEY || key === TRIAL_KEY) writeNativeBackup()
 }
 
 function randomPart() {
@@ -47,11 +116,13 @@ function randomPart() {
 }
 
 export function getDeviceCode() {
+  restoreNativeBackup()
   let code = ''
   try { code = String(localStorage.getItem(DEVICE_KEY) || '').trim() } catch (e) {}
   if (!/^XC-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) {
     code = 'XC-' + randomPart().slice(0, 4) + '-' + randomPart().slice(0, 4) + '-' + randomPart().slice(0, 4)
     try { localStorage.setItem(DEVICE_KEY, code) } catch (e) {}
+    writeNativeBackup()
   }
   return code
 }
@@ -85,10 +156,11 @@ export async function verifyLicenseCode(code, deviceCode = getDeviceCode()) {
 }
 
 function readTrial() {
-  const d = readJson('xc_offline_trial_v1', null)
+  restoreNativeBackup()
+  const d = readJson(TRIAL_KEY, null)
   if (d && Number(d.start) > 0) return d
   const fresh = { start: now(), points: TRIAL_POINTS, device: getDeviceCode() }
-  writeJson('xc_offline_trial_v1', fresh)
+  writeJson(TRIAL_KEY, fresh)
   return fresh
 }
 
@@ -115,7 +187,19 @@ function applyTrial() {
 }
 
 export async function licenseInit() {
+  if (IS_TRIAL_BUILD) {
+    licenseState.ready = true
+    licenseState.active = true
+    licenseState.mode = 'trial'
+    licenseState.plan = 'trial'
+    licenseState.planName = '限时体验'
+    licenseState.message = '限时体验版'
+    return licenseState
+  }
+  restoreNativeBackup()
   licenseState.deviceCode = getDeviceCode()
+  // 每次启动都把当前完整授权快照写回私有目录，既能在升级后补齐旧版本遗漏的备份，也便于下次覆盖安装恢复。
+  writeNativeBackup()
   const saved = readJson(STORAGE_KEY, null)
   if (saved && saved.code) {
     const r = await verifyLicenseCode(saved.code, licenseState.deviceCode)
@@ -145,6 +229,7 @@ export async function activateLicenseCode(code) {
 }
 
 export function consumeLicensePoints(cost = 1) {
+  if (IS_TRIAL_BUILD) return { ok: true, cost: 0 }
   if (!licenseState.ready || licenseState.mode === 'paid') return { ok: true, cost: 0 }
   if (licenseState.mode !== 'trial' || !licenseState.active) return { ok: false, msg: licenseState.message || '请先激活正式套餐' }
   const t = readTrial()
@@ -154,11 +239,11 @@ export function consumeLicensePoints(cost = 1) {
     licenseState.active = false
     licenseState.mode = 'expired'
     licenseState.message = '试用点数已用完，请激活正式套餐'
-    writeJson('xc_offline_trial_v1', t)
+    writeJson(TRIAL_KEY, t)
     return { ok: false, msg: licenseState.message }
   }
   t.points = (Number(t.points) || 0) - need
-  writeJson('xc_offline_trial_v1', t)
+  writeJson(TRIAL_KEY, t)
   licenseState.trialPoints = t.points
   if (t.points <= 0) {
     licenseState.active = false
